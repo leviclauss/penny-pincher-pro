@@ -24,7 +24,8 @@ Two tracks:
 
 - Python 3.11+, FastAPI, SQLAlchemy 2.x (Mapped[] / select() style),
   Alembic, Pydantic v2 + pydantic-settings, alpaca-py, `ta` (indicators),
-  pandas, structlog, tenacity, click.
+  `py_vollib` (Black-Scholes IV inversion fallback), pandas, structlog,
+  tenacity, click.
 - pytest + pytest-asyncio + syrupy (snapshots).
 - ruff (lint + format), mypy strict.
 - SQLite for v1 (Postgres-ready via SQLAlchemy).
@@ -41,9 +42,12 @@ backend/
     session.py      Base, engine, sessionmaker, get_session() ctx mgr
     models/         ORM models grouped by domain (one file per domain)
   ingestion/
-    alpaca_client.py    Alpaca SDK wrapper + retry
+    alpaca_client.py    Bars SDK wrapper + retry
+    options_client.py   Options SDK wrapper + retry + OCC parsing
     bars.py             Daily bars fetcher (full + incremental)
+    options.py          Option chain fetcher (current snapshot)
     indicators.py       Technical indicators (pure functions)
+    iv.py               ATM IV / rank / percentile + BS inversion
     persistence.py      DataFrame ↔ DB helpers
     pipeline.py         Orchestration + click CLI
   screener/         Filter pipeline + scoring  (PARTNER TRACK)
@@ -95,9 +99,17 @@ Schema decisions worth knowing:
   `core.time.utcnow()` for defaults.
 - `indicators_daily.ema_200_weekly` is nullable — needs ~200 weeks of
   history before it's meaningful.
-- IV-derived columns (`iv_atm`, `iv_rank`, `iv_percentile`) are populated
-  by options ingestion (next session); they're nullable and remain NaN
-  until then.
+- `indicators_daily.iv_atm` is populated by the options pass when an
+  option chain exists for the symbol on the as-of date.
+- `indicators_daily.iv_rank` / `iv_percentile` need a 252-day rolling
+  window; they remain NULL until ≥126 days of valid `iv_atm` history
+  accumulate (no backfill — Alpaca's options history is shallow).
+- `options_snapshot.volume` and `open_interest` stay NULL on the
+  free Alpaca tier (the snapshot endpoint doesn't expose them). Filters
+  that depend on those columns require a paid feed (ORATS/CBOE).
+- `options_snapshot` is a current-only table — each ingestion run
+  replaces the symbol's prior rows so stale strikes don't linger after
+  the underlying moves.
 - JSON columns use SQLAlchemy `JSON` (TEXT on SQLite, JSONB on Postgres).
 - Foreign keys cascade on positions/backtest child tables.
 - Composite primary keys for time-series rows (`(symbol, date)`,
@@ -142,6 +154,7 @@ Schema decisions worth knowing:
 | Seed dev watchlist | `cd backend && python -m scripts.seed_dev` |
 | Full ingestion | `make ingest-full` |
 | Daily ingestion | `make ingest-incremental` |
+| Skip options (fast bars-only) | `python -m ingestion.pipeline --incremental --skip-options` |
 | Backend dev server | `make run-backend` |
 | Frontend dev server | `make run-frontend` |
 | Update indicator snapshot | `cd backend && pytest tests/test_indicators.py --snapshot-update` |
