@@ -16,6 +16,8 @@ dependencies = [
     "alembic>=1.13",
     "alpaca-py>=0.30",
     "ta>=0.11",
+    "py_vollib>=1.0.1",
+    "scipy>=1.11",
     "pandas>=2.2",
     "numpy>=1.26",
     "structlog>=24.1",
@@ -87,7 +89,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["alembic/versions/", "build/", "dist/"]
 
 [[tool.mypy.overrides]]
-module = ["ta.*", "alpaca.*"]
+module = ["ta.*", "alpaca.*", "py_vollib.*", "py_lets_be_rational.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

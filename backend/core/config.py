@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     alpaca_api_secret: str = Field(default="")
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
     alpaca_data_feed: str = "iex"
+    alpaca_options_feed: str = "indicative"
+
+    risk_free_rate: float = 0.045
+    options_max_dte: int = 60
+    options_strike_pct_window: float = 0.15
 
 
 @lru_cache(maxsize=1)
