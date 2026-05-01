@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     options_max_dte: int = 60
     options_strike_pct_window: float = 0.15
 
+    finnhub_api_key: str = Field(default="")
+    finnhub_base_url: str = "https://finnhub.io/api/v1"
+    earnings_lookahead_days: int = 90
+
+    yahoo_base_url: str = "https://query1.finance.yahoo.com"
+    macro_lookback_days: int = 365
+    spy_symbol: str = "SPY"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
