@@ -85,8 +85,8 @@ class AlpacaOptionsClient:
         if client is not None:
             self._client: _ChainClient = client
         else:
-            key = api_key or settings.alpaca_api_key
-            secret = api_secret or settings.alpaca_api_secret
+            key = api_key if api_key is not None else settings.alpaca_api_key
+            secret = api_secret if api_secret is not None else settings.alpaca_api_secret
             if not key or not secret:
                 raise AlpacaOptionsError(
                     "Alpaca credentials missing — set ALPACA_API_KEY / ALPACA_API_SECRET"
