@@ -24,8 +24,8 @@ Two tracks:
 
 - Python 3.11+, FastAPI, SQLAlchemy 2.x (Mapped[] / select() style),
   Alembic, Pydantic v2 + pydantic-settings, alpaca-py, `ta` (indicators),
-  `py_vollib` (Black-Scholes IV inversion fallback), pandas, structlog,
-  tenacity, click.
+  `py_vollib` (Black-Scholes IV inversion fallback), `httpx` (Finnhub +
+  Yahoo Finance HTTP), pandas, structlog, tenacity, click.
 - pytest + pytest-asyncio + syrupy (snapshots).
 - ruff (lint + format), mypy strict.
 - SQLite for v1 (Postgres-ready via SQLAlchemy).
@@ -44,8 +44,12 @@ backend/
   ingestion/
     alpaca_client.py    Bars SDK wrapper + retry
     options_client.py   Options SDK wrapper + retry + OCC parsing
+    finnhub_client.py   Finnhub HTTP wrapper (earnings calendar)
+    yahoo_client.py     Yahoo Finance HTTP wrapper (VIX/VIX9D index data)
     bars.py             Daily bars fetcher (full + incremental)
     options.py          Option chain fetcher (current snapshot)
+    earnings.py         Earnings calendar fetcher (next 90 days)
+    macro.py            VIX/SPY macro fetcher + regime derivation
     indicators.py       Technical indicators (pure functions)
     iv.py               ATM IV / rank / percentile + BS inversion
     persistence.py      DataFrame ↔ DB helpers
@@ -110,6 +114,13 @@ Schema decisions worth knowing:
 - `options_snapshot` is a current-only table — each ingestion run
   replaces the symbol's prior rows so stale strikes don't linger after
   the underlying moves.
+- `earnings` is populated by Finnhub (free tier, US equities only) for
+  the next ~90 days; without `FINNHUB_API_KEY` the earnings step
+  silently no-ops rather than failing the whole pipeline.
+- `macro_daily.spy_ema_200` is read from `indicators_daily` (single
+  source of truth); the macro fetcher must run after the indicator step.
+- `macro_daily.vix_term_structure` = `vix_9d / vix_close`; values < 1
+  indicate backwardation per doc 01.
 - JSON columns use SQLAlchemy `JSON` (TEXT on SQLite, JSONB on Postgres).
 - Foreign keys cascade on positions/backtest child tables.
 - Composite primary keys for time-series rows (`(symbol, date)`,
@@ -155,6 +166,7 @@ Schema decisions worth knowing:
 | Full ingestion | `make ingest-full` |
 | Daily ingestion | `make ingest-incremental` |
 | Skip options (fast bars-only) | `python -m ingestion.pipeline --incremental --skip-options` |
+| Skip everything but bars | `python -m ingestion.pipeline --incremental --skip-options --skip-earnings --skip-macro` |
 | Backend dev server | `make run-backend` |
 | Frontend dev server | `make run-frontend` |
 | Update indicator snapshot | `cd backend && pytest tests/test_indicators.py --snapshot-update` |
