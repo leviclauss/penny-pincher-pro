@@ -54,7 +54,11 @@ def upsert_indicators(
     if indicators.empty:
         return 0
 
-    target = indicators if only_dates is None else indicators.loc[indicators.index.isin(only_dates)]
+    if only_dates is None:
+        target = indicators
+    else:
+        target_index = pd.to_datetime(only_dates)
+        target = indicators.loc[indicators.index.isin(target_index)]
     if target.empty:
         return 0
 
