@@ -5,9 +5,48 @@ A personal stock screener and alert system for the wheel options strategy
 
 ## Status
 
-Week 1: data ingestion (daily bars + indicators) and project skeleton.
-See [`docs/planning/`](docs/planning/) for the full design spec, and
-[`CLAUDE.md`](CLAUDE.md) for conventions and module layout.
+Roadmap follows the implementation order in [`docs/planning/`](docs/planning/)
+(00–08). The full schema (all 17 tables) is frozen by the initial Alembic
+migration, so unbuilt tracks already have their storage contract.
+
+- [x] **01 — Data ingestion.** Daily bars (split-adjusted) + indicators
+      (EMA 20/50/200, RSI, ATR, weekly EMA200), option-chain snapshots
+      with ATM IV / IV-rank / IV-percentile (Black–Scholes fallback),
+      Finnhub per-symbol earnings, Yahoo VIX/VIX9D + SPY-vs-200EMA macro,
+      and one-shot ticker-metadata refresh (sector, market cap).
+- [x] **05 — Web UI (read-only slice).** Dashboard (macro strip,
+      watchlist freshness, upcoming earnings, VIX history), `/tickers`
+      sortable watchlist, `/tickers/{symbol}` detail (1y price chart with
+      EMA 20/50/200 + earnings markers, RSI(14), IV history), plus
+      watchlist add/edit/hide/delete with per-ticker backfill.
+- [x] **07 — Scheduler & jobs.** APScheduler embedded in the FastAPI
+      lifespan, `evening_pipeline` job, `job_run()` context manager
+      writing every execution to `job_runs`, `/api/system/jobs` +
+      `/api/system/job-runs` endpoints.
+- [x] **08 — Deployment.** Backend + frontend Dockerfiles,
+      `docker-compose.prod.yml`, CI builds prod images, Lightsail +
+      Tailscale runbook in [`docs/deploy.md`](docs/deploy.md).
+- [ ] **02 — Screener filters.** `screener/filters/` is empty —
+      need `base.py` (Filter ABC + `FilterContext` / `FilterResult`),
+      `registry.py`, the per-domain filter modules (technical,
+      volatility, liquidity, event, economics), `filter_configs`
+      loader, and the pipeline that writes to `screener_results`.
+- [ ] **03 — Alert engine.** `alerts/triggers/` and `alerts/channels/`
+      are stub `__init__.py` files — need trigger evaluation, dedup,
+      and channel adapters (email / push / webhook).
+- [ ] **04 — Position tracking.** `positions/` is empty — wheel
+      lifecycle (CSP → assignment → CC → called away), management
+      rules, snapshots into `position_snapshots`.
+- [ ] **06 — Backtesting.** `backtest/` only has a `data/` stub —
+      filter forward-return evaluation and full-wheel simulation
+      using synthetic Black–Scholes pricing (per the point-in-time
+      rules in `06-backtesting.md`).
+- [ ] **05 — Web UI (remaining pages).** `/screener`, `/configs`,
+      `/positions`, `/alerts`, `/backtest`, `/settings`, plus any
+      mutations and auth.
+
+See [`CLAUDE.md`](CLAUDE.md) for conventions, the schema contract, and
+how to add a filter or a new ingested source.
 
 ## Stack
 
