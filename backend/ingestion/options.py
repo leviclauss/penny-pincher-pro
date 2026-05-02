@@ -193,5 +193,3 @@ def _latest_close(session: Session, symbol: str) -> float | None:
         .limit(1)
     ).first()
     return float(row[0]) if row else None
-
-
