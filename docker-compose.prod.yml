@@ -5,8 +5,9 @@
 #   IMAGE_TAG=<sha-or-latest> docker compose -f docker-compose.prod.yml pull
 #   IMAGE_TAG=<sha-or-latest> docker compose -f docker-compose.prod.yml up -d
 #
-# Both services bind only to 127.0.0.1 — exposure to the personal Tailscale
-# network is the operator's job (see docs/deploy.md). No public ingress.
+# Both services bind only to 127.0.0.1 — exposure to the personal
+# Tailscale network is the operator's job (see docs/deploy.md). No
+# public ingress.
 
 services:
   backend:
