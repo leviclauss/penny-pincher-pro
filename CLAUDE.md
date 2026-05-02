@@ -266,4 +266,5 @@ discussion:
   08-deployment).
 - Schema: `backend/db/models/`.
 - Stack & deployment: [`docs/planning/08-deployment.md`](docs/planning/08-deployment.md).
+- Production deploy runbook (Lightsail + Tailscale + compose): [`docs/deploy.md`](docs/deploy.md).
 - Filter catalog: [`docs/planning/02-screener-filters.md`](docs/planning/02-screener-filters.md).

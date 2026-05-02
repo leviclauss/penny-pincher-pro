@@ -1,0 +1,80 @@
+name: Build production images
+
+# Builds the prod Dockerfile targets to catch breakage early. On main, also
+# pushes to GHCR so the server can `docker compose pull` instead of building
+# locally if you want a faster, more reproducible deploy path.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose.prod.yml"
+      - ".github/workflows/build-prod-images.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose.prod.yml"
+      - ".github/workflows/build-prod-images.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            target: prod
+          - image: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+            target: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          repo="${{ github.repository_owner }}/penny-pincher-pro-${{ matrix.image }}"
+          repo_lower="$(echo "$repo" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "name=ghcr.io/$repo_lower"
+            echo "sha_tag=ghcr.io/$repo_lower:${{ github.sha }}"
+            echo "latest_tag=ghcr.io/$repo_lower:latest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build (and push on main)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ steps.tags.outputs.sha_tag }}
+            ${{ steps.tags.outputs.latest_tag }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}

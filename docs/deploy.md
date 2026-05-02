@@ -1,0 +1,376 @@
+# Deployment runbook
+
+Single-user production deploy: AWS Lightsail VM + Tailscale + Docker
+Compose. Read this once start-to-finish before running anything; the
+ordering matters (especially closing port 22 *after* Tailscale is up).
+
+**Total ongoing cost:** ~$7/month (Lightsail micro). Tailscale and
+Backblaze B2 are effectively free at this scale.
+
+## Pre-requisites on your laptop
+
+- AWS account with billing enabled
+- `awscli` installed and `aws configure` set up
+- `ssh` and `rclone` (for backup verification)
+- A GitHub personal access token with `read:packages` scope (only if you
+  plan to pull pre-built images from GHCR rather than build on the
+  server — see *Deploy mode* below)
+
+## Decisions baked into this runbook
+
+- **Region:** `us-east-1` (Virginia). Closest to Alpaca + Finnhub data
+  centers, lowest API latency.
+- **Lightsail bundle:** `micro_3_0` (1GB RAM, 40GB SSD, 2TB transfer,
+  $7/mo). The `nano` tier risks OOM during full backfill.
+- **Blueprint:** `debian_12` (smaller, less Ubuntu-noise than the AMI).
+- **Auth model:** Tailscale only — the server is **not** reachable from
+  the public internet after Phase 3.
+
+## Deploy mode
+
+Two paths are supported by `docker-compose.prod.yml`:
+
+| Mode | What happens | When to use |
+|---|---|---|
+| **Build on server** (default) | `docker compose up -d --build` builds the images from source on the box | Simplest. ~1-min build per deploy. Default. |
+| **Pull from GHCR** | `docker compose pull && up -d` pulls images CI built on push to main | Faster deploys; reproducible. Requires GHCR login on the server. |
+
+This runbook uses build-on-server. To switch to GHCR mode, see the
+*Switching to GHCR pulls* section at the bottom.
+
+---
+
+## Phase 1 — Provision (5 minutes)
+
+Pure CLI. From your laptop:
+
+```bash
+# Create the instance.
+aws lightsail create-instances \
+  --instance-names wheel-server \
+  --availability-zone us-east-1a \
+  --blueprint-id debian_12 \
+  --bundle-id micro_3_0 \
+  --region us-east-1
+
+# Wait until it's running (poll until 'state.name' = 'running').
+aws lightsail get-instance --instance-name wheel-server \
+  --query 'instance.state.name' --output text --region us-east-1
+
+# Allocate + attach a static IP (free while attached).
+aws lightsail allocate-static-ip \
+  --static-ip-name wheel-static --region us-east-1
+aws lightsail attach-static-ip \
+  --static-ip-name wheel-static --instance-name wheel-server \
+  --region us-east-1
+
+# Note the public IP for SSH bootstrap.
+PUBLIC_IP=$(aws lightsail get-static-ip \
+  --static-ip-name wheel-static --region us-east-1 \
+  --query 'staticIp.ipAddress' --output text)
+echo "$PUBLIC_IP"
+
+# Open SSH only briefly for the bootstrap session.
+aws lightsail put-instance-public-ports \
+  --instance-name wheel-server \
+  --port-infos fromPort=22,toPort=22,protocol=TCP \
+  --region us-east-1
+
+# Pull the SSH key.
+aws lightsail download-default-key-pair \
+  --region us-east-1 \
+  --query 'privateKeyBase64' --output text \
+  | base64 -d > ~/.ssh/lightsail.pem
+chmod 600 ~/.ssh/lightsail.pem
+```
+
+## Phase 2 — Server bootstrap (10 minutes)
+
+```bash
+ssh -i ~/.ssh/lightsail.pem admin@$PUBLIC_IP
+```
+
+On the server:
+
+```bash
+# System updates.
+sudo apt-get update
+sudo apt-get -y upgrade
+
+# Docker.
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker admin
+
+# Tools we need on the host (for backups).
+sudo apt-get install -y sqlite3 rclone zstd git
+
+# Tailscale.
+curl -fsSL https://tailscale.com/install.sh | sudo sh
+
+# Join your tailnet. The flag --ssh enables Tailscale SSH so you can
+# drop the Lightsail key after this. The command will print a URL to
+# auth in your browser.
+sudo tailscale up --hostname=wheel-server --ssh
+
+# Verify from your laptop:
+#   tailscale status   # should show wheel-server
+#   ssh admin@wheel-server   # should work without -i
+
+# Re-login so docker-group membership takes effect.
+exit
+```
+
+Verify Tailscale SSH works *before* closing the public port:
+
+```bash
+# From laptop, no key needed:
+ssh admin@wheel-server 'docker --version'
+```
+
+If that succeeded:
+
+```bash
+# Close public SSH. From laptop:
+aws lightsail close-instance-public-ports \
+  --instance-name wheel-server \
+  --port-info fromPort=22,toPort=22,protocol=TCP \
+  --region us-east-1
+```
+
+The server is now invisible to the public internet.
+
+## Phase 3 — First deploy (10 minutes)
+
+SSH via Tailscale and clone the repo:
+
+```bash
+ssh admin@wheel-server
+sudo mkdir -p /opt/penny-pincher-pro
+sudo chown admin:admin /opt/penny-pincher-pro
+git clone https://github.com/leviclauss/penny-pincher-pro.git /opt/penny-pincher-pro
+cd /opt/penny-pincher-pro
+```
+
+Configure secrets:
+
+```bash
+cp .env.example .env
+$EDITOR .env
+```
+
+Fill in at minimum:
+
+- `ALPACA_API_KEY`, `ALPACA_API_SECRET`
+- `FINNHUB_API_KEY` (or leave empty to skip earnings ingestion)
+- `TIMEZONE` (likely `America/Los_Angeles` per existing default)
+
+For backup off-site upload, also set:
+
+- `BACKUP_REMOTE` (e.g. `b2:wheel-backups/prod`)
+- Configure `rclone` with B2 credentials: `rclone config` and follow
+  prompts. Backblaze docs:
+  https://www.backblaze.com/docs/cloud-storage-create-an-application-key
+
+Apply migrations and bring up the stack:
+
+```bash
+# Run migrations against the persistent volume. We use a one-shot
+# container so the same image that runs the app applies the schema.
+docker compose -f docker-compose.prod.yml run --rm backend alembic upgrade head
+
+# Seed the dev watchlist (or skip and add tickers via the UI later).
+docker compose -f docker-compose.prod.yml run --rm backend python -m scripts.seed_dev
+
+# Start.
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Verify:
+
+```bash
+# Backend health (scheduler running, last bar date present).
+curl -fsS http://localhost:8000/api/system/health | jq
+
+# Frontend (nginx serving the SPA).
+curl -fsS -o /dev/null -w '%{http_code}\n' http://localhost/
+
+# Logs.
+docker compose -f docker-compose.prod.yml logs -f --tail=200
+```
+
+From your laptop / phone (with Tailscale running):
+
+```
+http://wheel-server/         # frontend
+http://wheel-server/api/system/health   # backend
+```
+
+## Phase 4 — Initial data load (15 minutes)
+
+The scheduler will run automatically at 5:30 PM PT, but for the first
+load you'll want a full backfill:
+
+```bash
+ssh admin@wheel-server
+cd /opt/penny-pincher-pro
+docker compose -f docker-compose.prod.yml exec backend \
+  python -m ingestion.pipeline --full
+```
+
+Expect ~5 years of bars + indicators across the seeded watchlist
+(~12k rows + same-shape indicators), plus options + IV for today.
+Takes 30–90 seconds depending on Alpaca latency.
+
+## Phase 5 — Backups + heartbeats
+
+### Nightly local backup + B2 upload
+
+Cron the backup script to run at 3 AM local time:
+
+```bash
+ssh admin@wheel-server
+cd /opt/penny-pincher-pro
+
+# Verify it works once manually (after .env is set + rclone is configured).
+DATABASE_PATH=/var/lib/docker/volumes/penny-pincher-pro_data/_data/wheel.db \
+BACKUP_DIR=/var/lib/docker/volumes/penny-pincher-pro_backups/_data \
+BACKUP_REMOTE=b2:wheel-backups/prod \
+./scripts/backup_sqlite.sh
+
+# Install the cron entry.
+crontab -e
+```
+
+Add:
+
+```
+0 3 * * * cd /opt/penny-pincher-pro && DATABASE_PATH=/var/lib/docker/volumes/penny-pincher-pro_data/_data/wheel.db BACKUP_DIR=/var/lib/docker/volumes/penny-pincher-pro_backups/_data BACKUP_REMOTE=b2:wheel-backups/prod ./scripts/backup_sqlite.sh >> /var/log/wheel-backup.log 2>&1
+```
+
+### Heartbeat monitoring (healthchecks.io)
+
+1. Sign up at https://healthchecks.io (free tier: 20 checks).
+2. Create a check called `wheel-evening-pipeline`. Set the schedule
+   to `Cron 30 17 * * 1-5` with timezone matching `TIMEZONE`. Grace 1h.
+3. Copy the ping URL.
+4. Set `HEALTHCHECKS_URL_EVENING_PIPELINE=<url>` in `.env` on the
+   server. Restart the backend: `docker compose -f docker-compose.prod.yml up -d`.
+   *(Note: this hook ships in a follow-up PR after the scheduler PR
+   merges. Until then, monitor by polling `/api/system/job-runs`
+   manually or wire your own ping into the backup cron line above.)*
+
+If the evening pipeline doesn't run for >25h, healthchecks.io will
+email/push you.
+
+## Operations
+
+### Tail logs
+
+```bash
+ssh admin@wheel-server
+cd /opt/penny-pincher-pro
+docker compose -f docker-compose.prod.yml logs -f --tail=200
+docker compose -f docker-compose.prod.yml logs -f backend  # just one service
+```
+
+### Manually run a job
+
+```bash
+curl -X POST http://wheel-server/api/system/jobs/evening_pipeline/run
+curl http://wheel-server/api/system/job-runs?limit=5 | jq
+```
+
+### Redeploy after pushing to main
+
+```bash
+ssh admin@wheel-server
+cd /opt/penny-pincher-pro
+git pull
+docker compose -f docker-compose.prod.yml run --rm backend alembic upgrade head
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+### Restore from a backup
+
+```bash
+ssh admin@wheel-server
+cd /opt/penny-pincher-pro
+
+# 1. Stop the app so nothing is writing.
+docker compose -f docker-compose.prod.yml stop backend
+
+# 2. Pick the snapshot you want.
+ls /var/lib/docker/volumes/penny-pincher-pro_backups/_data/    # local
+rclone ls b2:wheel-backups/prod                                # off-site
+
+# 3. Pull it (if off-site).
+rclone copy b2:wheel-backups/prod/wheel-20260601T030000Z.db.zst /tmp/
+
+# 4. Decompress.
+zstd -d /tmp/wheel-20260601T030000Z.db.zst -o /tmp/wheel-restored.db
+
+# 5. Replace.
+docker run --rm -v penny-pincher-pro_data:/data -v /tmp:/host alpine \
+  sh -c 'cp /host/wheel-restored.db /data/wheel.db'
+
+# 6. Start.
+docker compose -f docker-compose.prod.yml up -d backend
+```
+
+### Rotate API keys
+
+Edit `.env` on the server, then `docker compose -f docker-compose.prod.yml up -d`.
+APScheduler restarts; the next pipeline run uses the new keys.
+
+## Switching to GHCR pulls (optional)
+
+After your first push to main, the `build-prod-images.yml` workflow
+publishes images to:
+
+- `ghcr.io/leviclauss/penny-pincher-pro-backend:latest`
+- `ghcr.io/leviclauss/penny-pincher-pro-frontend:latest`
+
+To deploy by pull rather than build:
+
+1. Override the compose's `build:` with `image:` in a small
+   `docker-compose.override.yml` on the server.
+2. Authenticate Docker to GHCR with a fine-grained PAT
+   (`read:packages` is enough):
+   ```bash
+   echo $GHCR_TOKEN | docker login ghcr.io -u leviclauss --password-stdin
+   ```
+3. Replace the redeploy step with:
+   ```bash
+   docker compose -f docker-compose.prod.yml pull
+   docker compose -f docker-compose.prod.yml up -d
+   ```
+
+Worth it once you have multiple servers or care about reproducible
+images. Skip while it's just one box.
+
+## Pre-prod checklist
+
+Before relying on alerts for real trades:
+
+- [ ] All ingestion runs have green status in `/api/system/job-runs`
+- [ ] `make ingest-incremental` (or `evening_pipeline` cron) runs
+      successfully 5 weekdays in a row
+- [ ] Verify a holiday is correctly skipped (force a run on a known
+      market closure; expect `skipped="holiday"` in the job_runs row)
+- [ ] DST transition tested (run across the spring/fall boundary,
+      confirm cron fires at the right local time)
+- [ ] healthchecks.io receives pings
+- [ ] One end-to-end backup → restore drill (see *Restore from a
+      backup* above)
+- [ ] API key rotation drill (rotate Alpaca, confirm next run works)
+
+## Troubleshooting
+
+| Symptom | First thing to check |
+|---|---|
+| `health` returns 503 | `docker compose logs backend` — usually a DB migration didn't run |
+| `last_bar_date` stale | `/api/system/job-runs` — find the failed run, read `error` |
+| Frontend 502 | Backend container is down or unhealthy. `docker compose ps`. |
+| Out of disk | `df -h`, `du -sh /var/lib/docker/volumes/*` — old backups not pruning, or Docker image cache. `docker system prune -a` (won't touch volumes). |
+| Tailscale unreachable | `sudo tailscale status` on the server. If it's offline, `sudo systemctl restart tailscaled`. |
+| Alpaca 401 | Keys expired or wrong env. Edit `.env`, restart compose. |
