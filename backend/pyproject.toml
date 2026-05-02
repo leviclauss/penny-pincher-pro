@@ -25,6 +25,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "click>=8.1",
     "httpx>=0.27",
+    "apscheduler>=3.10",
+    "pandas-market-calendars>=4.4",
 ]
 
 [project.optional-dependencies]
@@ -90,7 +92,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["alembic/versions/", "build/", "dist/"]
 
 [[tool.mypy.overrides]]
-module = ["ta.*", "alpaca.*", "py_vollib.*", "py_lets_be_rational.*"]
+module = ["ta.*", "alpaca.*", "py_vollib.*", "py_lets_be_rational.*", "apscheduler.*", "pandas_market_calendars.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
