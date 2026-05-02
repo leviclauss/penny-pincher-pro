@@ -102,8 +102,7 @@ jobs:
           LIGHTSAIL_USER: ${{ secrets.LIGHTSAIL_USER }}
         run: |
           set -euo pipefail
-          tailscale ssh -o StrictHostKeyChecking=accept-new \
-            "${LIGHTSAIL_USER}@${LIGHTSAIL_HOST}" bash -s <<EOF
+          tailscale ssh "${LIGHTSAIL_USER}@${LIGHTSAIL_HOST}" bash -s <<EOF
           set -euo pipefail
           cd /opt/penny-pincher-pro
           git fetch origin main
