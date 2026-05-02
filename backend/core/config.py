@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     options_max_dte: int = 60
     options_strike_pct_window: float = 0.15
 
+    scheduler_enabled: bool = True
+    scheduler_evening_hour: int = 17
+    scheduler_evening_minute: int = 30
+    market_calendar: str = "NYSE"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
