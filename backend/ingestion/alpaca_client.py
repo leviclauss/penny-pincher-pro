@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Protocol
 
+from alpaca.data.enums import Adjustment
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
@@ -106,6 +107,7 @@ class AlpacaClient:
             start=str(start),
             end=str(end),
             feed=self._feed,
+            adjustment="split",
         )
         request = StockBarsRequest(
             symbol_or_symbols=symbols,
@@ -113,6 +115,7 @@ class AlpacaClient:
             start=start,
             end=end,
             feed=self._feed,
+            adjustment=Adjustment.SPLIT,
         )
         response = self._client.get_stock_bars(request)
         return _normalize_bar_response(response)

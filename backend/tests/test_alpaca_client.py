@@ -35,9 +35,10 @@ class _FakeClient:
         self._response = response
         self._raise_first_n = raise_first_n
         self.calls = 0
+        self.last_request: Any = None
 
     def get_stock_bars(self, request: Any) -> object:
-        _ = request
+        self.last_request = request
         self.calls += 1
         if self.calls <= self._raise_first_n:
             raise ConnectionError("transient")
@@ -67,6 +68,18 @@ def test_normalizes_bars_to_records() -> None:
     assert aapl.date == date(2024, 1, 2)
     assert aapl.close == 100.5
     assert aapl.volume == 1_000_000
+
+
+def test_requests_split_adjusted_bars() -> None:
+    from alpaca.data.enums import Adjustment
+
+    fake = _FakeClient(_bars_response())
+    client = AlpacaClient(api_key="k", api_secret="s", client=fake)
+
+    client.get_daily_bars(["AAPL"], date(2024, 1, 1), date(2024, 1, 5))
+
+    assert fake.last_request is not None
+    assert fake.last_request.adjustment == Adjustment.SPLIT
 
 
 def test_empty_symbols_short_circuits() -> None:
