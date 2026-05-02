@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import date
 
 import click
 import pandas as pd
@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 
 from core.config import get_settings
 from core.logging import configure_logging, get_logger
+from core.time import market_today
 from db import get_session
 from db.models.market import BarDaily, IndicatorDaily
 from ingestion.alpaca_client import AlpacaClient
@@ -181,7 +182,7 @@ def _maybe_run_options_and_iv(
         return None, IVSummary()
 
     options_summary = fetch_chains(session, options_client, symbols, as_of=as_of)
-    iv_summary = _refresh_iv(session, symbols, as_of=as_of or _today_utc())
+    iv_summary = _refresh_iv(session, symbols, as_of=as_of or market_today())
     return options_summary, iv_summary
 
 
@@ -308,10 +309,6 @@ def _new_indicator_dates(session: Session, symbol: str, candidate_index: pd.Inde
         if isinstance(d, date) and d not in existing:
             out.append(d)
     return out
-
-
-def _today_utc() -> date:
-    return datetime.now(UTC).date()
 
 
 def _build_earnings_client() -> EarningsSource | None:

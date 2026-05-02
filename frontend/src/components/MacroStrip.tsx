@@ -3,7 +3,7 @@ import { Activity, Gauge, LineChart, ShieldCheck } from "lucide-react";
 import { fetchMacroCurrent } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { cn } from "@/lib/utils";
-import { formatNumber } from "@/lib/format";
+import { formatDate, formatNumber } from "@/lib/format";
 
 function Pill({
   tone,
@@ -121,7 +121,7 @@ export function MacroStrip(): JSX.Element {
         <div className="flex items-center justify-between">
           <CardTitle>Market context</CardTitle>
           <span className="text-muted-foreground font-mono text-[11px]">
-            {data.date}
+            {formatDate(data.date)}
           </span>
         </div>
       </CardHeader>

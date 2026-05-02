@@ -110,6 +110,45 @@ def test_list_tickers_with_data(client: TestClient) -> None:
     assert msft["next_earnings_date"] is None
 
 
+def test_list_tickers_uses_indicator_at_latest_bar_date(client: TestClient) -> None:
+    """The IV pass writes IV-only rows on non-trading days (no ema/rsi). The
+    list endpoint must read the indicator row aligned to the latest BAR
+    date, not the latest indicator date, otherwise ema_200/rsi_14 come back
+    NULL on every active ticker."""
+    from db import get_session
+    from db.models.market import IndicatorDaily, Ticker
+
+    _seed_basic(client)
+    today = date.today()
+    with get_session() as session:
+        # Simulate the IV-pass writing IV-only rows for "today" and "tomorrow"
+        # past the latest bar date.
+        session.add(
+            IndicatorDaily(
+                symbol="AAPL",
+                date=today,
+                iv_atm=0.31,
+            )
+        )
+        session.add(
+            IndicatorDaily(
+                symbol="AAPL",
+                date=today + timedelta(days=1),
+                iv_atm=0.32,
+            )
+        )
+        # And a similar rogue row for MSFT (which has no bars, so it should
+        # still come back with all-null indicator fields).
+        session.add(Ticker(symbol="GOOG", name="Alphabet", tier=1, is_active=True))
+        session.add(IndicatorDaily(symbol="GOOG", date=today, iv_atm=0.40))
+
+    resp = client.get("/api/tickers")
+    assert resp.status_code == 200
+    aapl = next(r for r in resp.json() if r["symbol"] == "AAPL")
+    assert aapl["ema_200"] == 99.0
+    assert aapl["rsi_14"] == 59.0
+
+
 def test_chart_returns_bars_with_indicators(client: TestClient) -> None:
     _seed_basic(client)
     resp = client.get("/api/tickers/AAPL/chart?range=1y")

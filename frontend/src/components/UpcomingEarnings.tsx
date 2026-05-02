@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { CalendarDays } from "lucide-react";
 import { fetchUpcomingEarnings } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { formatDate } from "@/lib/format";
 import {
   Table,
   TableBody,
@@ -51,7 +52,7 @@ export function UpcomingEarnings(): JSX.Element {
               {data.map((row) => (
                 <TableRow key={`${row.symbol}-${row.earnings_date}`}>
                   <TableCell className="text-muted-foreground font-mono text-xs">
-                    {row.earnings_date}
+                    {formatDate(row.earnings_date)}
                   </TableCell>
                   <TableCell>
                     <Link

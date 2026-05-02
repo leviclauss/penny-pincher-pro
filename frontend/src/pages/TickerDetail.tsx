@@ -13,7 +13,7 @@ import { PriceChart } from "@/components/charts/PriceChart";
 import { RsiChart } from "@/components/charts/RsiChart";
 import { IvHistoryChart } from "@/components/charts/IvHistoryChart";
 import { cn } from "@/lib/utils";
-import { formatNumber, formatPercent } from "@/lib/format";
+import { formatDate, formatNumber, formatPercent } from "@/lib/format";
 
 export function TickerDetail(): JSX.Element {
   const { symbol } = useParams<{ symbol: string }>();
@@ -102,7 +102,7 @@ export function TickerDetail(): JSX.Element {
               )}
               {ticker?.last_close_date && (
                 <span className="text-muted-foreground font-mono text-xs">
-                  as of {ticker.last_close_date}
+                  as of {formatDate(ticker.last_close_date)}
                 </span>
               )}
             </div>
@@ -136,12 +136,13 @@ export function TickerDetail(): JSX.Element {
               <PriceChart
                 bars={chart.data}
                 earnings={earnings.data?.filter((e) => e.symbol === sym) ?? []}
+                syncId={`ticker-${sym}`}
               />
               <div className="mt-6">
                 <h3 className="text-muted-foreground mb-2 text-[10px] font-semibold uppercase tracking-widest">
                   RSI (14)
                 </h3>
-                <RsiChart bars={chart.data} />
+                <RsiChart bars={chart.data} syncId={`ticker-${sym}`} />
               </div>
             </>
           )}

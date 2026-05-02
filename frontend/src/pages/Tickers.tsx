@@ -14,7 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/Table";
 import { cn } from "@/lib/utils";
-import { formatNumber, formatPercent, pctDistance } from "@/lib/format";
+import { formatDate, formatNumber, formatPercent, pctDistance } from "@/lib/format";
 
 type SortKey =
   | "symbol"
@@ -247,7 +247,7 @@ export function Tickers(): JSX.Element {
                         {t.iv_atm === null ? "—" : `${(t.iv_atm * 100).toFixed(1)}%`}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-right font-mono text-xs">
-                        {t.next_earnings_date ?? "—"}
+                        {formatDate(t.next_earnings_date)}
                       </TableCell>
                     </TableRow>
                   );

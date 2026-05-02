@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Database, Eye, Server } from "lucide-react";
 import { fetchHealth, fetchTickers } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 function Stat({
@@ -72,7 +73,7 @@ export function WatchlistSummary(): JSX.Element {
           label="Last bar"
           value={
             <span className="font-mono text-base">
-              {health.data?.last_bar_date ?? "—"}
+              {formatDate(health.data?.last_bar_date)}
             </span>
           }
           hint={`${(health.data?.bar_count ?? 0).toLocaleString()} bars stored`}

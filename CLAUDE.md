@@ -126,6 +126,10 @@ Schema decisions worth knowing:
 - `earnings` is populated by Finnhub (free tier, US equities only) for
   the next ~90 days; without `FINNHUB_API_KEY` the earnings step
   silently no-ops rather than failing the whole pipeline.
+- `tickers.sector` / `market_cap` are populated by a separate one-shot
+  flow (`python -m ingestion.ticker_metadata`), not the daily pipeline.
+  Sector is sourced from Finnhub's `finnhubIndustry`; ETFs (SPY, QQQ)
+  have no profile on the free tier and stay NULL.
 - `macro_daily.spy_ema_200` is read from `indicators_daily` (single
   source of truth); the macro fetcher must run after the indicator step.
 - `macro_daily.vix_term_structure` = `vix_9d / vix_close`; values < 1
@@ -175,6 +179,7 @@ Schema decisions worth knowing:
 | Apply migrations | `make migrate` |
 | Reset DB | `make db-reset` |
 | Seed dev watchlist | `cd backend && python -m scripts.seed_dev` |
+| Refresh ticker metadata (sector, market_cap) | `cd backend && python -m ingestion.ticker_metadata` |
 | Full ingestion | `make ingest-full` |
 | Daily ingestion | `make ingest-incremental` |
 | Skip options (fast bars-only) | `python -m ingestion.pipeline --incremental --skip-options` |

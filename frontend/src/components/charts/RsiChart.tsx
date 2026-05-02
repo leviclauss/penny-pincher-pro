@@ -10,16 +10,26 @@ import {
   YAxis,
 } from "recharts";
 import type { ChartBar } from "@/api/types";
+import { formatDate, formatDateShort } from "@/lib/format";
 
 const AXIS_COLOR = "hsl(240 5% 50%)";
 const GRID_COLOR = "hsl(240 5% 16% / 0.7)";
 
-export function RsiChart({ bars }: { bars: ChartBar[] }): JSX.Element {
+interface Props {
+  bars: ChartBar[];
+  syncId?: string;
+}
+
+export function RsiChart({ bars, syncId }: Props): JSX.Element {
   const data = bars.map((b) => ({ date: b.date, rsi_14: b.rsi_14 }));
   return (
     <div className="h-[150px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+        <LineChart
+          data={data}
+          margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+          syncId={syncId}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
           <XAxis
             dataKey="date"
@@ -27,6 +37,7 @@ export function RsiChart({ bars }: { bars: ChartBar[] }): JSX.Element {
             axisLine={{ stroke: GRID_COLOR }}
             tickLine={{ stroke: GRID_COLOR }}
             minTickGap={48}
+            tickFormatter={(v: string) => formatDateShort(v)}
           />
           <YAxis
             tick={{ fontSize: 11, fill: AXIS_COLOR }}
@@ -47,6 +58,7 @@ export function RsiChart({ bars }: { bars: ChartBar[] }): JSX.Element {
               boxShadow: "0 8px 24px hsl(0 0% 0% / 0.5)",
             }}
             labelStyle={{ color: "hsl(var(--muted-foreground))", marginBottom: 4 }}
+            labelFormatter={(label: string) => formatDate(label)}
             formatter={(value: number | string) =>
               typeof value === "number" ? value.toFixed(1) : value
             }

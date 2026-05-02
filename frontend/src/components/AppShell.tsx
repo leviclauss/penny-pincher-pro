@@ -3,6 +3,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, LayoutDashboard, ListChecks, Menu, Sparkles, X } from "lucide-react";
 import { fetchHealth } from "@/api/client";
+import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -58,7 +59,7 @@ function HealthDot(): JSX.Element {
       </span>
       <Activity className="h-3 w-3" />
       <span className="font-mono">
-        {data?.last_bar_date ?? (isError ? "offline" : "—")}
+        {data?.last_bar_date ? formatDate(data.last_bar_date) : isError ? "offline" : "—"}
       </span>
     </div>
   );

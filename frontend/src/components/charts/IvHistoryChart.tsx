@@ -8,9 +8,11 @@ import {
   YAxis,
 } from "recharts";
 import type { IVPoint } from "@/api/types";
+import { formatDate, formatDateShort } from "@/lib/format";
 
 const AXIS_COLOR = "hsl(240 5% 50%)";
 const GRID_COLOR = "hsl(240 5% 16% / 0.7)";
+const RANK_MIN_HISTORY = 126;
 
 export function IvHistoryChart({ points }: { points: IVPoint[] }): JSX.Element {
   const data = points
@@ -25,8 +27,37 @@ export function IvHistoryChart({ points }: { points: IVPoint[] }): JSX.Element {
     );
   }
 
+  const belowThreshold = data.length < RANK_MIN_HISTORY;
+  const progressPct = Math.min(100, (data.length / RANK_MIN_HISTORY) * 100);
+
   return (
-    <div className="h-[240px] w-full">
+    <div className="space-y-3">
+      {belowThreshold && (
+        <div className="border-border/60 bg-card/40 rounded-md border border-dashed p-3 text-xs">
+          <div className="text-muted-foreground flex items-baseline justify-between gap-3">
+            <span>
+              Building IV history —{" "}
+              <span className="text-foreground font-medium tabular-nums">
+                {data.length}
+              </span>{" "}
+              / {RANK_MIN_HISTORY} days collected.
+            </span>
+            <span className="font-mono">{progressPct.toFixed(0)}%</span>
+          </div>
+          <div className="bg-border/40 mt-2 h-1 overflow-hidden rounded-full">
+            <div
+              className="bg-cyan-400/70 h-full rounded-full transition-all"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+          <p className="text-muted-foreground mt-2 leading-relaxed">
+            Alpaca's options history is shallow, so IV accumulates one day per
+            pipeline run. IV rank and percentile stay null until the threshold
+            is reached.
+          </p>
+        </div>
+      )}
+      <div className="h-[240px] w-full">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
           <defs>
@@ -42,6 +73,7 @@ export function IvHistoryChart({ points }: { points: IVPoint[] }): JSX.Element {
             axisLine={{ stroke: GRID_COLOR }}
             tickLine={{ stroke: GRID_COLOR }}
             minTickGap={48}
+            tickFormatter={(v: string) => formatDateShort(v)}
           />
           <YAxis
             tick={{ fontSize: 11, fill: AXIS_COLOR }}
@@ -61,6 +93,7 @@ export function IvHistoryChart({ points }: { points: IVPoint[] }): JSX.Element {
               boxShadow: "0 8px 24px hsl(0 0% 0% / 0.5)",
             }}
             labelStyle={{ color: "hsl(var(--muted-foreground))", marginBottom: 4 }}
+            labelFormatter={(label: string) => formatDate(label)}
             formatter={(value: number | string) =>
               typeof value === "number" ? `${value.toFixed(1)}%` : value
             }
@@ -76,6 +109,7 @@ export function IvHistoryChart({ points }: { points: IVPoint[] }): JSX.Element {
           />
         </AreaChart>
       </ResponsiveContainer>
+      </div>
     </div>
   );
 }

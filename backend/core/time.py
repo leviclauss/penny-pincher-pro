@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
+
+MARKET_TZ = ZoneInfo("America/New_York")
 
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def market_today() -> date:
+    return datetime.now(MARKET_TZ).date()

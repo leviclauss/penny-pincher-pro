@@ -10,11 +10,13 @@ import {
   YAxis,
 } from "recharts";
 import type { ChartBar, UpcomingEarning } from "@/api/types";
+import { formatDate, formatDateShort } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 interface Props {
   bars: ChartBar[];
   earnings?: UpcomingEarning[];
+  syncId?: string;
 }
 
 type EmaKey = "ema_20" | "ema_50" | "ema_200";
@@ -28,7 +30,7 @@ const EMA_META: Record<EmaKey, { label: string; stroke: string }> = {
 const AXIS_COLOR = "hsl(240 5% 50%)";
 const GRID_COLOR = "hsl(240 5% 16% / 0.7)";
 
-export function PriceChart({ bars, earnings = [] }: Props): JSX.Element {
+export function PriceChart({ bars, earnings = [], syncId }: Props): JSX.Element {
   const [enabled, setEnabled] = useState<Record<EmaKey, boolean>>({
     ema_20: true,
     ema_50: true,
@@ -87,7 +89,11 @@ export function PriceChart({ bars, earnings = [] }: Props): JSX.Element {
       </div>
       <div className="h-[380px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+          <ComposedChart
+            data={data}
+            margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+            syncId={syncId}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
             <XAxis
               dataKey="date"
@@ -95,6 +101,7 @@ export function PriceChart({ bars, earnings = [] }: Props): JSX.Element {
               axisLine={{ stroke: GRID_COLOR }}
               tickLine={{ stroke: GRID_COLOR }}
               minTickGap={48}
+              tickFormatter={(v: string) => formatDateShort(v)}
             />
             <YAxis
               tick={{ fontSize: 11, fill: AXIS_COLOR }}
@@ -115,6 +122,7 @@ export function PriceChart({ bars, earnings = [] }: Props): JSX.Element {
                 boxShadow: "0 8px 24px hsl(0 0% 0% / 0.5)",
               }}
               labelStyle={{ color: "hsl(var(--muted-foreground))", marginBottom: 4 }}
+              labelFormatter={(label: string) => formatDate(label)}
               formatter={(value: number | string) =>
                 typeof value === "number" ? value.toFixed(2) : value
               }

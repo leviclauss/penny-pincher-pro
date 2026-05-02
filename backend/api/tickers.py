@@ -95,17 +95,15 @@ def list_tickers() -> list[TickerSummary]:
         )
         bars_by_symbol = {b.symbol: b for b in latest_bars}
 
-        latest_ind_date_subq = (
-            select(IndicatorDaily.symbol, func.max(IndicatorDaily.date).label("max_date"))
-            .group_by(IndicatorDaily.symbol)
-            .subquery()
-        )
+        # Indicator row keyed to each symbol's latest bar date, NOT the latest
+        # indicator date — the IV pass writes IV-only rows on non-trading days
+        # that have no ema/rsi.
         latest_inds = (
             session.execute(
                 select(IndicatorDaily).join(
-                    latest_ind_date_subq,
-                    (IndicatorDaily.symbol == latest_ind_date_subq.c.symbol)
-                    & (IndicatorDaily.date == latest_ind_date_subq.c.max_date),
+                    latest_bar_date_subq,
+                    (IndicatorDaily.symbol == latest_bar_date_subq.c.symbol)
+                    & (IndicatorDaily.date == latest_bar_date_subq.c.max_date),
                 )
             )
             .scalars()

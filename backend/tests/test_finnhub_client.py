@@ -12,7 +12,12 @@ import httpx
 import pytest
 import respx
 
-from ingestion.finnhub_client import EarningsRecord, FinnhubClient, FinnhubError
+from ingestion.finnhub_client import (
+    CompanyProfile,
+    EarningsRecord,
+    FinnhubClient,
+    FinnhubError,
+)
 
 
 def _payload() -> dict[str, object]:
@@ -106,3 +111,51 @@ def test_handles_missing_calendar_key() -> None:
 def test_missing_api_key_raises() -> None:
     with pytest.raises(FinnhubError):
         FinnhubClient(api_key="")
+
+
+@respx.mock
+def test_get_company_profile_normalizes() -> None:
+    payload = {
+        "name": "Apple Inc",
+        "ticker": "AAPL",
+        "finnhubIndustry": "Technology",
+        "marketCapitalization": 3_500_000.0,  # millions
+        "country": "US",
+    }
+    respx.get("https://finnhub.io/api/v1/stock/profile2").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    out = FinnhubClient(api_key="k", base_url="https://finnhub.io/api/v1").get_company_profile(
+        "AAPL"
+    )
+    assert isinstance(out, CompanyProfile)
+    assert out.symbol == "AAPL"
+    assert out.name == "Apple Inc"
+    assert out.sector == "Technology"
+    assert out.market_cap == 3_500_000.0 * 1_000_000
+
+
+@respx.mock
+def test_get_company_profile_returns_none_for_empty_payload() -> None:
+    respx.get("https://finnhub.io/api/v1/stock/profile2").mock(
+        return_value=httpx.Response(200, json={})
+    )
+    out = FinnhubClient(api_key="k", base_url="https://finnhub.io/api/v1").get_company_profile(
+        "QQQ"
+    )
+    assert out is None
+
+
+@respx.mock
+def test_get_company_profile_partial_fields() -> None:
+    payload = {"name": "Foo", "finnhubIndustry": "", "marketCapitalization": 0}
+    respx.get("https://finnhub.io/api/v1/stock/profile2").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    out = FinnhubClient(api_key="k", base_url="https://finnhub.io/api/v1").get_company_profile(
+        "FOO"
+    )
+    assert out is not None
+    assert out.name == "Foo"
+    assert out.sector is None
+    assert out.market_cap is None

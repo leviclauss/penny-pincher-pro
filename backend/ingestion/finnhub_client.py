@@ -38,6 +38,21 @@ class EarningsRecord:
     time_of_day: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class CompanyProfile:
+    """Subset of Finnhub /stock/profile2 we persist on the tickers table.
+
+    ``market_cap`` is in absolute USD (Finnhub returns millions; we expand
+    on normalize). ``sector`` is sourced from ``finnhubIndustry`` — Finnhub
+    doesn't expose a separate sector vs. industry split on the free tier.
+    """
+
+    symbol: str
+    name: str | None
+    sector: str | None
+    market_cap: float | None
+
+
 class FinnhubError(RuntimeError):
     """Raised when Finnhub returns a non-retryable error."""
 
@@ -98,6 +113,38 @@ class FinnhubClient:
         response = self._client.get(f"{self._base}/calendar/earnings", params=params)
         response.raise_for_status()
         return _normalize(response.json())
+
+    @retry(
+        retry=retry_if_exception_type(_RETRYABLE_EXCEPTIONS),
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=16),
+        reraise=True,
+    )
+    def get_company_profile(self, symbol: str) -> CompanyProfile | None:
+        """Fetch company metadata for ``symbol``. Returns ``None`` if Finnhub
+        has no profile (delisted, non-US, ETF on free tier)."""
+        params = {"symbol": symbol, "token": self._key}
+        log.info("finnhub.get_company_profile", symbol=symbol)
+        response = self._client.get(f"{self._base}/stock/profile2", params=params)
+        response.raise_for_status()
+        return _normalize_profile(symbol, response.json())
+
+
+def _normalize_profile(symbol: str, payload: object) -> CompanyProfile | None:
+    if not isinstance(payload, dict) or not payload:
+        return None
+    name = payload.get("name")
+    industry = payload.get("finnhubIndustry")
+    raw_cap = payload.get("marketCapitalization")
+    market_cap: float | None = None
+    if isinstance(raw_cap, (int, float)) and raw_cap > 0:
+        market_cap = float(raw_cap) * 1_000_000  # Finnhub returns millions of USD
+    return CompanyProfile(
+        symbol=symbol,
+        name=name if isinstance(name, str) and name else None,
+        sector=industry if isinstance(industry, str) and industry else None,
+        market_cap=market_cap,
+    )
 
 
 def _normalize(payload: object) -> list[EarningsRecord]:

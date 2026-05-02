@@ -17,6 +17,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from core.logging import get_logger
+from core.time import market_today
 from db.models.market import BarDaily, OptionsSnapshot, Ticker
 from ingestion.options_client import OptionSnapshotRecord
 
@@ -68,7 +69,7 @@ def fetch_chains(
     snapshot rows are deleted first so stale strikes don't linger.
     """
     target = _resolve_symbols(session, symbols)
-    today = as_of or _today_utc()
+    today = as_of or market_today()
     expiration_lte = today + timedelta(days=max_dte)
     snapshot_at = datetime.now(UTC)
 
@@ -194,5 +195,3 @@ def _latest_close(session: Session, symbol: str) -> float | None:
     return float(row[0]) if row else None
 
 
-def _today_utc() -> date:
-    return datetime.now(UTC).date()

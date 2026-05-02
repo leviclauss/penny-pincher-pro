@@ -11,6 +11,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
+import pandas_market_calendars as mcal
 from sqlalchemy import func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -46,7 +47,7 @@ def fetch_full(
 ) -> FetchSummary:
     """Backfill ``years`` of daily bars for ``symbols`` (or every active ticker)."""
     target = _resolve_symbols(session, symbols)
-    end_date = end or _yesterday_utc()
+    end_date = end or _latest_available_session()
     start_date = end_date - timedelta(days=int(years * 365.25) + 7)
     log.info("bars.fetch_full.start", symbols=len(target), start=str(start_date), end=str(end_date))
     return _fetch_and_upsert(session, client, target, start_date, end_date, batch_size)
@@ -69,7 +70,7 @@ def fetch_incremental(
     starts; this is meant for the daily incremental run).
     """
     target = _resolve_symbols(session, symbols)
-    end_date = end or _yesterday_utc()
+    end_date = end or _latest_available_session()
     last_dates = _last_stored_dates(session, target)
 
     summaries: list[FetchSummary] = []
@@ -220,5 +221,19 @@ def _merge(summaries: Iterable[FetchSummary], symbols_requested: int) -> FetchSu
     )
 
 
-def _yesterday_utc() -> date:
-    return (datetime.now(UTC) - timedelta(days=1)).date()
+def _latest_available_session(calendar_name: str = "XNYS") -> date:
+    """Most recent NYSE session whose close has already elapsed.
+
+    Returns today's date if the regular session has closed; otherwise the prior
+    trading day (skipping weekends and exchange holidays).
+    """
+    calendar = mcal.get_calendar(calendar_name)
+    now = datetime.now(UTC)
+    schedule = calendar.schedule(
+        start_date=(now - timedelta(days=10)).date(),
+        end_date=now.date(),
+    )
+    closed = schedule[schedule["market_close"] <= now]
+    if closed.empty:
+        return (now - timedelta(days=1)).date()
+    return closed.index[-1].date()  # type: ignore[no-any-return]
