@@ -20,13 +20,16 @@ FROM base AS prod
 RUN pip install -e .
 COPY . .
 
-# Run as non-root.
-RUN useradd --create-home --shell /bin/bash app && chown -R app:app /app
+# Run as non-root. /data and /backups are pre-created so named volumes
+# inherit app:app ownership on first init.
+RUN useradd --create-home --shell /bin/bash app \
+    && mkdir -p /data /backups \
+    && chown -R app:app /app /data /backups
 USER app
 
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/system/health').read()" \
         || exit 1
 
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 1"]
