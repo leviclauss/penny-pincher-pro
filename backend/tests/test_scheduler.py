@@ -143,7 +143,14 @@ def test_register_job_round_trip() -> None:
     def body() -> None:
         return None
 
-    register_job("__test_job", lambda: body)
+    register_job(
+        "__test_job",
+        factory=lambda: body,
+        description="test",
+        cron="0 0 * * *",
+        timezone="UTC",
+        schedule_human="Daily 00:00 UTC",
+    )
     resolved = get_job_body("__test_job")
     assert resolved is body
     assert get_job_body("does-not-exist") is None

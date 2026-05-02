@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { Dashboard } from "@/pages/Dashboard";
+import { Jobs } from "@/pages/Jobs";
 import { NotFound } from "@/pages/NotFound";
 import { TickerDetail } from "@/pages/TickerDetail";
 import { Tickers } from "@/pages/Tickers";
@@ -13,6 +14,7 @@ export function App(): JSX.Element {
           <Route index element={<Dashboard />} />
           <Route path="tickers" element={<Tickers />} />
           <Route path="tickers/:symbol" element={<TickerDetail />} />
+          <Route path="jobs" element={<Jobs />} />
           <Route path="404" element={<NotFound />} />
           <Route path="*" element={<Navigate to="/404" replace />} />
         </Route>

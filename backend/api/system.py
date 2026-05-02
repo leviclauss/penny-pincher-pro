@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import threading
 from datetime import date, datetime
-from typing import Any
+from typing import Any, cast
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from apscheduler.schedulers.background import BackgroundScheduler
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
@@ -25,7 +26,7 @@ from core.time import utcnow
 from db import get_session
 from db.models.market import BarDaily
 from db.models.system import JobRun
-from scheduler.app import get_job_body
+from scheduler.app import get_job_body, list_jobs
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -56,6 +57,17 @@ class TriggerResponse(BaseModel):
     detail: str
 
 
+class JobInfoOut(BaseModel):
+    name: str
+    description: str
+    schedule: str
+    cron: str
+    timezone: str
+    enabled: bool
+    next_run_at: datetime | None
+    last_run: JobRunOut | None
+
+
 @router.get("/health", response_model=HealthStatus)
 def health() -> HealthStatus:
     settings = get_settings()
@@ -84,6 +96,46 @@ def list_job_runs(
             stmt = stmt.where(JobRun.job_name == job_name)
         rows = session.execute(stmt).scalars().all()
         return [_to_out(row) for row in rows]
+
+
+@router.get("/jobs", response_model=list[JobInfoOut])
+def list_registered_jobs(request: Request) -> list[JobInfoOut]:
+    scheduler = cast(
+        BackgroundScheduler | None,
+        request.app.state.__dict__.get("scheduler"),
+    )
+    statuses = list_jobs(scheduler)
+    if not statuses:
+        return []
+
+    names = [s.info.name for s in statuses]
+    with get_session() as session:
+        latest_ids_subq = (
+            select(func.max(JobRun.id).label("id"))
+            .where(JobRun.job_name.in_(names))
+            .group_by(JobRun.job_name)
+            .subquery()
+        )
+        rows = (
+            session.execute(select(JobRun).join(latest_ids_subq, JobRun.id == latest_ids_subq.c.id))
+            .scalars()
+            .all()
+        )
+        latest_by_name = {row.job_name: _to_out(row) for row in rows}
+
+    return [
+        JobInfoOut(
+            name=s.info.name,
+            description=s.info.description,
+            schedule=s.info.schedule_human,
+            cron=s.info.cron,
+            timezone=s.info.timezone,
+            enabled=s.enabled,
+            next_run_at=s.next_run_at,
+            last_run=latest_by_name.get(s.info.name),
+        )
+        for s in statuses
+    ]
 
 
 @router.post("/jobs/{name}/run", response_model=TriggerResponse, status_code=202)

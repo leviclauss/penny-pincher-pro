@@ -1,11 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { fetchMacroHistory } from "@/api/client";
+import { Link } from "react-router-dom";
+import { fetchAllJobRuns, fetchMacroHistory } from "@/api/client";
+import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { VixHistoryChart } from "@/components/charts/VixHistoryChart";
 import { MacroStrip } from "@/components/MacroStrip";
 import { UpcomingEarnings } from "@/components/UpcomingEarnings";
 import { WatchlistSummary } from "@/components/WatchlistSummary";
+import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const VIX_RANGES = ["3m", "6m", "1y", "2y"] as const;
@@ -64,6 +67,74 @@ function VixHistoryCard(): JSX.Element {
   );
 }
 
+function RecentJobRunsCard(): JSX.Element {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["job-runs", "recent"],
+    queryFn: () => fetchAllJobRuns(5),
+    refetchInterval: 30_000,
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Recent ingestion runs</CardTitle>
+            <p className="text-muted-foreground text-xs">
+              Last five executions across all jobs.
+            </p>
+          </div>
+          <Link
+            to="/jobs"
+            className="text-primary text-xs font-medium hover:underline"
+          >
+            View all →
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="text-muted-foreground flex h-32 items-center justify-center text-sm">
+            Loading…
+          </div>
+        ) : isError ? (
+          <div className="text-destructive flex h-32 items-center justify-center text-sm">
+            Failed to load runs.
+          </div>
+        ) : !data || data.length === 0 ? (
+          <div className="border-border/50 text-muted-foreground flex h-32 items-center justify-center rounded-md border border-dashed text-sm">
+            No runs recorded yet
+          </div>
+        ) : (
+          <ul className="divide-border/40 divide-y text-sm">
+            {data.map((run) => (
+              <li key={run.id} className="flex items-center justify-between gap-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{run.job_name}</div>
+                  <div className="text-muted-foreground font-mono text-[11px]">
+                    {formatDateTime(run.started_at)}
+                  </div>
+                </div>
+                <Badge
+                  variant={
+                    run.status === "success"
+                      ? "success"
+                      : run.status === "failure"
+                        ? "destructive"
+                        : "warning"
+                  }
+                >
+                  {run.status}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function Dashboard(): JSX.Element {
   return (
     <div className="space-y-8">
@@ -84,19 +155,7 @@ export function Dashboard(): JSX.Element {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <WatchlistSummary />
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent ingestion runs</CardTitle>
-            <p className="text-muted-foreground text-xs">
-              Job history lands once the scheduler is wired up.
-            </p>
-          </CardHeader>
-          <CardContent>
-            <div className="border-border/50 text-muted-foreground flex h-32 items-center justify-center rounded-md border border-dashed text-sm">
-              No runs recorded yet
-            </div>
-          </CardContent>
-        </Card>
+        <RecentJobRunsCard />
       </div>
 
       <UpcomingEarnings />
