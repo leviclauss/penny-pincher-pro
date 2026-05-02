@@ -30,6 +30,8 @@ from ingestion.options import ChainSource
 from ingestion.options_client import AlpacaOptionsClient, AlpacaOptionsError
 from scheduler.jobs.evening import JOB_NAME as EVENING_JOB_NAME
 from scheduler.jobs.evening import run_evening_pipeline
+from scheduler.jobs.positions import JOB_NAME as POSITIONS_JOB_NAME
+from scheduler.jobs.positions import run_position_management
 from scheduler.jobs.screener import JOB_NAME as SCREENER_JOB_NAME
 from scheduler.jobs.screener import run_screener_job
 
@@ -117,6 +119,12 @@ def create_and_start() -> BackgroundScheduler:
         settings.scheduler_screener_offset_minutes,
     )
     _register_screener(scheduler, screener_hour, screener_minute, settings.timezone)
+    _register_positions(
+        scheduler,
+        settings.scheduler_positions_hour,
+        settings.scheduler_positions_minute,
+        settings.timezone,
+    )
     scheduler.start()
     log.info(
         "scheduler.started",
@@ -125,6 +133,8 @@ def create_and_start() -> BackgroundScheduler:
         evening_minute=settings.scheduler_evening_minute,
         screener_hour=screener_hour,
         screener_minute=screener_minute,
+        positions_hour=settings.scheduler_positions_hour,
+        positions_minute=settings.scheduler_positions_minute,
     )
     return scheduler
 
@@ -203,6 +213,32 @@ def _screener_entry() -> None:
     calendar = settings.market_calendar or None
     with get_session() as session:
         run_screener_job(session, market_calendar=calendar)
+
+
+def _register_positions(
+    scheduler: BackgroundScheduler, hour: int, minute: int, timezone: str
+) -> None:
+    cron = f"{minute} {hour} * * mon-fri"
+    schedule_human = f"Mon-Fri {hour:02d}:{minute:02d} {timezone}"
+    scheduler.add_job(
+        _positions_entry,
+        trigger=CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute),
+        id=POSITIONS_JOB_NAME,
+        replace_existing=True,
+    )
+    register_job(
+        POSITIONS_JOB_NAME,
+        factory=lambda: _positions_entry,
+        description="Daily snapshot + management-rule pass for open wheel positions.",
+        cron=cron,
+        timezone=timezone,
+        schedule_human=schedule_human,
+    )
+
+
+def _positions_entry() -> None:
+    with get_session() as session:
+        run_position_management(session)
 
 
 def build_alpaca_client() -> AlpacaClient | None:
