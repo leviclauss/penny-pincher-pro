@@ -78,3 +78,4 @@ The docs below are numbered in the order I'd build them. Each piece is usable on
 - `06-backtesting.md`
 - `07-scheduler-and-jobs.md`
 - `08-deployment.md`
+- `09-telegram-integration.md`
