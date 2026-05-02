@@ -4,14 +4,15 @@ Single-user production deploy: AWS Lightsail VM + Tailscale + Docker
 Compose. Read this once start-to-finish before running anything; the
 ordering matters (especially closing port 22 *after* Tailscale is up).
 
-**Total ongoing cost:** ~$7/month (Lightsail micro). Tailscale and
-Backblaze B2 are effectively free at this scale.
+**Total ongoing cost:** ~$7/month (Lightsail micro). Tailscale is free
+at this scale; off-site backups are pulled to your laptop, so no extra
+service fees.
 
 ## Pre-requisites on your laptop
 
 - AWS account with billing enabled
 - `awscli` installed and `aws configure` set up
-- `ssh` and `rclone` (for backup verification)
+- `ssh` (Tailscale handles laptop ↔ server reachability for backup pulls)
 - A GitHub personal access token with `read:packages` scope (only if you
   plan to pull pre-built images from GHCR rather than build on the
   server — see *Deploy mode* below)
@@ -76,11 +77,12 @@ aws lightsail put-instance-public-ports \
   --port-infos fromPort=22,toPort=22,protocol=TCP \
   --region us-east-1
 
-# Pull the SSH key.
+# Pull the SSH key. Despite the field name, `privateKeyBase64` is
+# already a PEM-formatted key — do NOT base64-decode it.
 aws lightsail download-default-key-pair \
   --region us-east-1 \
   --query 'privateKeyBase64' --output text \
-  | base64 -d > ~/.ssh/lightsail.pem
+  > ~/.ssh/lightsail.pem
 chmod 600 ~/.ssh/lightsail.pem
 ```
 
@@ -101,8 +103,10 @@ sudo apt-get -y upgrade
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker admin
 
-# Tools we need on the host (for backups).
-sudo apt-get install -y sqlite3 rclone zstd git
+# Tools we need on the host (for backups + scheduled jobs).
+# Debian 12 Lightsail images don't ship cron by default.
+sudo apt-get install -y sqlite3 zstd git cron
+sudo systemctl enable --now cron
 
 # Tailscale.
 curl -fsSL https://tailscale.com/install.sh | sudo sh
@@ -155,7 +159,7 @@ Configure secrets:
 
 ```bash
 cp .env.example .env
-$EDITOR .env
+nano .env
 ```
 
 Fill in at minimum:
@@ -164,12 +168,9 @@ Fill in at minimum:
 - `FINNHUB_API_KEY` (or leave empty to skip earnings ingestion)
 - `TIMEZONE` (likely `America/Los_Angeles` per existing default)
 
-For backup off-site upload, also set:
-
-- `BACKUP_REMOTE` (e.g. `b2:wheel-backups/prod`)
-- Configure `rclone` with B2 credentials: `rclone config` and follow
-  prompts. Backblaze docs:
-  https://www.backblaze.com/docs/cloud-storage-create-an-application-key
+Off-site backups are handled by pulling snapshots to your laptop over
+Tailscale (see Phase 5) — no additional cloud-storage credentials are
+needed. Leave `BACKUP_REMOTE` unset.
 
 Apply migrations and bring up the stack:
 
@@ -223,18 +224,23 @@ Takes 30–90 seconds depending on Alpaca latency.
 
 ## Phase 5 — Backups + heartbeats
 
-### Nightly local backup + B2 upload
+### Nightly local backup (server) + pull to laptop
 
-Cron the backup script to run at 3 AM local time:
+The strategy: the server takes a nightly local snapshot at 3 AM; your
+laptop pulls new snapshots at 4 AM over Tailscale into a directory that
+your existing personal backup (iCloud Drive, Time Machine, etc.) already
+covers. That last hop is what makes them "off-site" — no third-party
+storage account required.
+
+#### On the server: nightly snapshot cron
 
 ```bash
 ssh admin@wheel-server
 cd /opt/penny-pincher-pro
 
-# Verify it works once manually (after .env is set + rclone is configured).
+# Verify it works once manually.
 DATABASE_PATH=/var/lib/docker/volumes/penny-pincher-pro_data/_data/wheel.db \
 BACKUP_DIR=/var/lib/docker/volumes/penny-pincher-pro_backups/_data \
-BACKUP_REMOTE=b2:wheel-backups/prod \
 ./scripts/backup_sqlite.sh
 
 # Install the cron entry.
@@ -244,8 +250,36 @@ crontab -e
 Add:
 
 ```
-0 3 * * * cd /opt/penny-pincher-pro && DATABASE_PATH=/var/lib/docker/volumes/penny-pincher-pro_data/_data/wheel.db BACKUP_DIR=/var/lib/docker/volumes/penny-pincher-pro_backups/_data BACKUP_REMOTE=b2:wheel-backups/prod ./scripts/backup_sqlite.sh >> /var/log/wheel-backup.log 2>&1
+0 3 * * * cd /opt/penny-pincher-pro && DATABASE_PATH=/var/lib/docker/volumes/penny-pincher-pro_data/_data/wheel.db BACKUP_DIR=/var/lib/docker/volumes/penny-pincher-pro_backups/_data BACKUP_RETENTION_DAYS=30 ./scripts/backup_sqlite.sh >> /var/log/wheel-backup.log 2>&1
 ```
+
+`BACKUP_RETENTION_DAYS=30` widens the window so a laptop that's been
+offline for travel still has snapshots left to pull. (The script only
+prunes after a successful off-site upload, so with `BACKUP_REMOTE`
+unset nothing prunes — but keep the var set in case you re-enable
+remote upload later.)
+
+#### On your laptop: pull snapshots over Tailscale
+
+Tailscale already gives the laptop reachability to `wheel-server`, and
+the snapshot directory is owned by `admin`, so `rsync` over SSH works
+without extra setup. Pick a destination inside something your existing
+personal backup covers (iCloud Drive, Time Machine target, etc.).
+
+```bash
+mkdir -p ~/Backups/wheel-server
+```
+
+Add a laptop-side cron (`crontab -e`) running an hour after the server
+snapshot finishes:
+
+```
+0 4 * * * rsync -az --ignore-existing admin@wheel-server:/var/lib/docker/volumes/penny-pincher-pro_backups/_data/ ~/Backups/wheel-server/ >> ~/Library/Logs/wheel-backup-pull.log 2>&1
+```
+
+`--ignore-existing` keeps the laptop copy authoritative for already-
+pulled snapshots even after the server prunes them, so the laptop
+accumulates the long-tail history.
 
 ### Heartbeat monitoring (healthchecks.io)
 
@@ -300,13 +334,14 @@ cd /opt/penny-pincher-pro
 docker compose -f docker-compose.prod.yml stop backend
 
 # 2. Pick the snapshot you want.
-ls /var/lib/docker/volumes/penny-pincher-pro_backups/_data/    # local
-rclone ls b2:wheel-backups/prod                                # off-site
+ls /var/lib/docker/volumes/penny-pincher-pro_backups/_data/    # on the server
+ls ~/Backups/wheel-server/                                     # on your laptop
 
-# 3. Pull it (if off-site).
-rclone copy b2:wheel-backups/prod/wheel-20260601T030000Z.db.zst /tmp/
+# 3. If the snapshot only exists on the laptop, copy it back to the server.
+#    (From your laptop, not the SSH session above.)
+scp ~/Backups/wheel-server/wheel-20260601T030000Z.db.zst admin@wheel-server:/tmp/
 
-# 4. Decompress.
+# 4. Decompress (on the server).
 zstd -d /tmp/wheel-20260601T030000Z.db.zst -o /tmp/wheel-restored.db
 
 # 5. Replace.
