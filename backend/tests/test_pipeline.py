@@ -19,11 +19,16 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from alembic import command
-from db.models.market import BarDaily, IndicatorDaily, Ticker
+from db.models.market import BarDaily, Earnings, IndicatorDaily, MacroDaily, Ticker
+from ingestion.finnhub_client import EarningsRecord
+from ingestion.macro import VIX9D_SYMBOL, VIX_SYMBOL
 from ingestion.options_client import OptionSnapshotRecord
 from ingestion.pipeline import run_full, run_incremental
+from ingestion.yahoo_client import IndexBarRecord
 from tests.test_bars_fetcher import FIXTURE_END, FakeAlpacaClient
 from tests.test_bars_fetcher import _fake_client_for as build_fake
+from tests.test_earnings_fetcher import FakeFinnhubClient
+from tests.test_macro_fetcher import FakeYahooClient
 from tests.test_options_fetcher import FakeOptionsClient
 
 
@@ -180,3 +185,78 @@ def test_skip_options_leaves_iv_null(session: Session) -> None:
         .where(IndicatorDaily.iv_atm.isnot(None))
     ).scalar_one()
     assert iv_count_with_value == 0
+
+
+def test_cli_advertises_skip_flags() -> None:
+    from click.testing import CliRunner
+
+    from ingestion.pipeline import cli
+
+    result = CliRunner().invoke(cli, ["--help"])
+    assert result.exit_code == 0
+    assert "--skip-options" in result.output
+    assert "--skip-earnings" in result.output
+    assert "--skip-macro" in result.output
+
+
+def test_run_full_with_earnings_and_macro(session: Session) -> None:
+    client: FakeAlpacaClient = build_fake(["AAA"])
+    finnhub = FakeFinnhubClient(
+        [
+            EarningsRecord(symbol="AAA", earnings_date=date(2026, 5, 5), time_of_day="AMC"),
+            EarningsRecord(symbol="OFFLIST", earnings_date=date(2026, 5, 6), time_of_day=None),
+        ]
+    )
+    yahoo = FakeYahooClient(
+        {
+            VIX_SYMBOL: [
+                IndexBarRecord(symbol=VIX_SYMBOL, date=FIXTURE_END, close=18.0),
+            ],
+            VIX9D_SYMBOL: [
+                IndexBarRecord(symbol=VIX9D_SYMBOL, date=FIXTURE_END, close=16.0),
+            ],
+        }
+    )
+
+    summary = run_full(
+        session,
+        client,  # type: ignore[arg-type]
+        ["AAA"],
+        years=2,
+        end=FIXTURE_END,
+        skip_options=True,
+        earnings_client=finnhub,
+        macro_client=yahoo,
+    )
+
+    assert summary.earnings is not None
+    assert summary.earnings.rows_written == 1
+    assert summary.macro is not None
+    assert summary.macro.rows_written >= 1
+
+    earnings_symbols = session.execute(select(Earnings.symbol)).scalars().all()
+    assert earnings_symbols == ["AAA"]
+
+    vix_close = session.execute(
+        select(MacroDaily.vix_close).where(MacroDaily.date == FIXTURE_END)
+    ).scalar_one()
+    assert vix_close == pytest.approx(18.0)
+
+
+def test_skip_earnings_and_macro_keeps_tables_empty(session: Session) -> None:
+    client: FakeAlpacaClient = build_fake(["AAA"])
+    summary = run_full(
+        session,
+        client,  # type: ignore[arg-type]
+        ["AAA"],
+        years=2,
+        end=FIXTURE_END,
+        skip_options=True,
+        skip_earnings=True,
+        skip_macro=True,
+    )
+
+    assert summary.earnings is None
+    assert summary.macro is None
+    assert session.execute(select(func.count()).select_from(Earnings)).scalar_one() == 0
+    assert session.execute(select(func.count()).select_from(MacroDaily)).scalar_one() == 0

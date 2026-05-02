@@ -10,6 +10,14 @@ The pipeline is the public entry point used by the scheduler (later) and the
     3. (Unless ``--skip-options``) Fetch current option chains, compute
        ATM IV / IV rank / IV percentile, upsert the IV columns into
        ``indicators_daily`` for ``as_of``.
+    4. (Unless ``--skip-earnings``) Pull the next ~90 days of earnings
+       from Finnhub, filter to active tickers, upsert into ``earnings``.
+       Silently skipped when no FINNHUB_API_KEY is configured.
+    5. (Unless ``--skip-macro``) Pull VIX/VIX9D from Yahoo, compose with
+       SPY close + 200 EMA from local data, upsert ``macro_daily``.
+
+Step 5 must run after step 2 because it reads SPY's EMA from
+``indicators_daily``.
 
 For ``--full``: every symbol gets every indicator row written. For
 ``--incremental``: only dates newly added by step 1 are written, but the
@@ -39,8 +47,11 @@ from ingestion.bars import (
     fetch_full,
     fetch_incremental,
 )
+from ingestion.earnings import EarningsFetchSummary, EarningsSource, fetch_earnings
+from ingestion.finnhub_client import FinnhubClient, FinnhubError
 from ingestion.indicators import compute_indicators
 from ingestion.iv import compute_atm_iv, compute_iv_percentile, compute_iv_rank
+from ingestion.macro import IndexHistorySource, MacroFetchSummary, fetch_macro
 from ingestion.options import ChainSource, OptionsFetchSummary, fetch_chains
 from ingestion.options_client import AlpacaOptionsClient
 from ingestion.persistence import (
@@ -50,6 +61,7 @@ from ingestion.persistence import (
     upsert_indicators,
     upsert_iv_indicators,
 )
+from ingestion.yahoo_client import YahooClient
 
 log = get_logger(__name__)
 
@@ -68,6 +80,8 @@ class PipelineSummary:
     symbols_processed: int
     options: OptionsFetchSummary | None = None
     iv: IVSummary = field(default_factory=IVSummary)
+    earnings: EarningsFetchSummary | None = None
+    macro: MacroFetchSummary | None = None
 
 
 def run_full(
@@ -80,6 +94,10 @@ def run_full(
     end: date | None = None,
     options_client: ChainSource | None = None,
     skip_options: bool = False,
+    earnings_client: EarningsSource | None = None,
+    skip_earnings: bool = False,
+    macro_client: IndexHistorySource | None = None,
+    skip_macro: bool = False,
 ) -> PipelineSummary:
     fetch_summary = fetch_full(
         session, client, symbols, years=years, batch_size=batch_size, end=end
@@ -91,6 +109,11 @@ def run_full(
     options_summary, iv_summary = _maybe_run_options_and_iv(
         session, options_client, affected, skip_options=skip_options, as_of=end
     )
+    earnings_summary = _maybe_run_earnings(
+        session, earnings_client, symbols, skip_earnings=skip_earnings, as_of=end
+    )
+    macro_summary = _maybe_run_macro(session, macro_client, skip_macro=skip_macro, as_of=end)
+
     log.info("pipeline.full.done")
     return PipelineSummary(
         mode="full",
@@ -99,6 +122,8 @@ def run_full(
         symbols_processed=processed,
         options=options_summary,
         iv=iv_summary,
+        earnings=earnings_summary,
+        macro=macro_summary,
     )
 
 
@@ -111,6 +136,10 @@ def run_incremental(
     end: date | None = None,
     options_client: ChainSource | None = None,
     skip_options: bool = False,
+    earnings_client: EarningsSource | None = None,
+    skip_earnings: bool = False,
+    macro_client: IndexHistorySource | None = None,
+    skip_macro: bool = False,
 ) -> PipelineSummary:
     fetch_summary = fetch_incremental(session, client, symbols, batch_size=batch_size, end=end)
     affected = symbols or _affected_after_fetch(session, fetch_summary)
@@ -120,6 +149,11 @@ def run_incremental(
     options_summary, iv_summary = _maybe_run_options_and_iv(
         session, options_client, affected, skip_options=skip_options, as_of=end
     )
+    earnings_summary = _maybe_run_earnings(
+        session, earnings_client, symbols, skip_earnings=skip_earnings, as_of=end
+    )
+    macro_summary = _maybe_run_macro(session, macro_client, skip_macro=skip_macro, as_of=end)
+
     log.info("pipeline.incremental.done")
     return PipelineSummary(
         mode="incremental",
@@ -128,6 +162,8 @@ def run_incremental(
         symbols_processed=processed,
         options=options_summary,
         iv=iv_summary,
+        earnings=earnings_summary,
+        macro=macro_summary,
     )
 
 
@@ -147,6 +183,49 @@ def _maybe_run_options_and_iv(
     options_summary = fetch_chains(session, options_client, symbols, as_of=as_of)
     iv_summary = _refresh_iv(session, symbols, as_of=as_of or _today_utc())
     return options_summary, iv_summary
+
+
+def _maybe_run_earnings(
+    session: Session,
+    earnings_client: EarningsSource | None,
+    symbols: list[str] | None,
+    *,
+    skip_earnings: bool,
+    as_of: date | None,
+) -> EarningsFetchSummary | None:
+    if skip_earnings or earnings_client is None:
+        if not skip_earnings:
+            log.info("pipeline.earnings_skipped", reason="no_client")
+        return None
+    settings = get_settings()
+    return fetch_earnings(
+        session,
+        earnings_client,
+        symbols,
+        lookahead_days=settings.earnings_lookahead_days,
+        as_of=as_of,
+    )
+
+
+def _maybe_run_macro(
+    session: Session,
+    macro_client: IndexHistorySource | None,
+    *,
+    skip_macro: bool,
+    as_of: date | None,
+) -> MacroFetchSummary | None:
+    if skip_macro or macro_client is None:
+        if not skip_macro:
+            log.info("pipeline.macro_skipped", reason="no_client")
+        return None
+    settings = get_settings()
+    return fetch_macro(
+        session,
+        macro_client,
+        lookback_days=settings.macro_lookback_days,
+        as_of=as_of,
+        spy_symbol=settings.spy_symbol,
+    )
 
 
 def _refresh_iv(session: Session, symbols: Iterable[str], *, as_of: date) -> IVSummary:
@@ -235,6 +314,15 @@ def _today_utc() -> date:
     return datetime.now(UTC).date()
 
 
+def _build_earnings_client() -> EarningsSource | None:
+    """Construct a Finnhub client if a key is configured; otherwise None."""
+    try:
+        return FinnhubClient()
+    except FinnhubError:
+        log.info("pipeline.finnhub_unavailable", reason="missing_api_key")
+        return None
+
+
 @click.command(context_settings={"show_default": True})
 @click.option(
     "--full/--incremental",
@@ -267,7 +355,27 @@ def _today_utc() -> date:
     default=False,
     help="Skip options chain fetch + IV computation (fast iteration on bars).",
 )
-def cli(full: bool, symbols: str | None, years: int, batch_size: int, skip_options: bool) -> None:
+@click.option(
+    "--skip-earnings",
+    is_flag=True,
+    default=False,
+    help="Skip earnings calendar fetch.",
+)
+@click.option(
+    "--skip-macro",
+    is_flag=True,
+    default=False,
+    help="Skip VIX/SPY macro fetch.",
+)
+def cli(
+    full: bool,
+    symbols: str | None,
+    years: int,
+    batch_size: int,
+    skip_options: bool,
+    skip_earnings: bool,
+    skip_macro: bool,
+) -> None:
     """Run the ingestion pipeline end-to-end."""
     settings = get_settings()
     configure_logging(level=settings.log_level, json_logs=settings.log_json)
@@ -275,6 +383,8 @@ def cli(full: bool, symbols: str | None, years: int, batch_size: int, skip_optio
     symbol_list = [s.strip().upper() for s in symbols.split(",")] if symbols else None
     client = AlpacaClient()
     options_client: ChainSource | None = None if skip_options else AlpacaOptionsClient()
+    earnings_client: EarningsSource | None = None if skip_earnings else _build_earnings_client()
+    macro_client: IndexHistorySource | None = None if skip_macro else YahooClient()
 
     with get_session() as session:
         if full:
@@ -286,6 +396,10 @@ def cli(full: bool, symbols: str | None, years: int, batch_size: int, skip_optio
                 batch_size=batch_size,
                 options_client=options_client,
                 skip_options=skip_options,
+                earnings_client=earnings_client,
+                skip_earnings=skip_earnings,
+                macro_client=macro_client,
+                skip_macro=skip_macro,
             )
         else:
             summary = run_incremental(
@@ -295,6 +409,10 @@ def cli(full: bool, symbols: str | None, years: int, batch_size: int, skip_optio
                 batch_size=batch_size,
                 options_client=options_client,
                 skip_options=skip_options,
+                earnings_client=earnings_client,
+                skip_earnings=skip_earnings,
+                macro_client=macro_client,
+                skip_macro=skip_macro,
             )
 
     options_msg = (
@@ -302,13 +420,19 @@ def cli(full: bool, symbols: str | None, years: int, batch_size: int, skip_optio
         if summary.options
         else "options=skipped"
     )
+    earnings_msg = (
+        f"earnings_rows={summary.earnings.rows_written}" if summary.earnings else "earnings=skipped"
+    )
+    macro_msg = f"macro_rows={summary.macro.rows_written}" if summary.macro else "macro=skipped"
     click.echo(
         f"mode={summary.mode} "
         f"bars_written={summary.fetch.bars_written} "
         f"indicators_written={summary.indicators_written} "
         f"symbols={summary.symbols_processed} "
         f"{options_msg} "
-        f"iv_rows={summary.iv.iv_rows_written}"
+        f"iv_rows={summary.iv.iv_rows_written} "
+        f"{earnings_msg} "
+        f"{macro_msg}"
     )
 
 
