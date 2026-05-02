@@ -1,6 +1,6 @@
-# Production compose. Pull-only: images are built and pushed by GitHub
-# Actions (.github/workflows/build-prod-images.yml). The server never
-# compiles anything — it only does:
+# Production compose. Pull-only: images are built and pushed by
+# GitHub Actions (.github/workflows/build-prod-images.yml). The
+# server never compiles anything — it only does:
 #
 #   IMAGE_TAG=<sha-or-latest> docker compose -f docker-compose.prod.yml pull
 #   IMAGE_TAG=<sha-or-latest> docker compose -f docker-compose.prod.yml up -d
