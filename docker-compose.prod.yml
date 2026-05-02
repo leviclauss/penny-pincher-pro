@@ -1,16 +1,16 @@
-# Production compose. Run on the server with:
-#   docker compose -f docker-compose.prod.yml up -d --build
+# Production compose. Pull-only: images are built and pushed by GitHub
+# Actions (.github/workflows/build-prod-images.yml). The server never
+# compiles anything — it only does:
+#
+#   IMAGE_TAG=<sha-or-latest> docker compose -f docker-compose.prod.yml pull
+#   IMAGE_TAG=<sha-or-latest> docker compose -f docker-compose.prod.yml up -d
 #
 # Both services bind only to 127.0.0.1 — exposure to the personal Tailscale
 # network is the operator's job (see docs/deploy.md). No public ingress.
 
 services:
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: prod
-    image: wheel-screener-backend:prod
+    image: ghcr.io/leviclauss/penny-pincher-pro-backend:${IMAGE_TAG:-latest}
     restart: always
     env_file: .env
     environment:
@@ -24,14 +24,8 @@ services:
       - "127.0.0.1:8000:8000"
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      target: prod
-    image: wheel-screener-frontend:prod
+    image: ghcr.io/leviclauss/penny-pincher-pro-frontend:${IMAGE_TAG:-latest}
     restart: always
-    volumes:
-      - ./frontend/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "127.0.0.1:80:80"
     depends_on:

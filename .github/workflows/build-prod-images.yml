@@ -1,8 +1,8 @@
-name: Build production images
+name: Build and deploy production images
 
-# Builds the prod Dockerfile targets to catch breakage early. On main, also
-# pushes to GHCR so the server can `docker compose pull` instead of building
-# locally if you want a faster, more reproducible deploy path.
+# Builds the prod Dockerfile targets, pushes to GHCR on main, then SSHes
+# into the Lightsail box (via Tailscale) and pulls the new images. The
+# server never compiles anything — see DEPLOYMENT.md for the full flow.
 
 on:
   push:
@@ -18,6 +18,7 @@ on:
       - "frontend/**"
       - "docker-compose.prod.yml"
       - ".github/workflows/build-prod-images.yml"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -48,7 +49,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -72,9 +73,43 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           target: ${{ matrix.target }}
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
           tags: |
             ${{ steps.tags.outputs.sha_tag }}
             ${{ steps.tags.outputs.latest_tag }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Pull and restart on Lightsail
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          envs: GITHUB_SHA
+          script: |
+            set -euo pipefail
+            cd /opt/penny-pincher-pro
+            git fetch origin main
+            git checkout -f "$GITHUB_SHA"
+            export IMAGE_TAG="$GITHUB_SHA"
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d
+            docker image prune -f
+        env:
+          GITHUB_SHA: ${{ github.sha }}
