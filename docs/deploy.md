@@ -13,9 +13,6 @@ service fees.
 - AWS account with billing enabled
 - `awscli` installed and `aws configure` set up
 - `ssh` (Tailscale handles laptop ↔ server reachability for backup pulls)
-- A GitHub personal access token with `read:packages` scope (only if you
-  plan to pull pre-built images from GHCR rather than build on the
-  server — see *Deploy mode* below)
 
 ## Decisions baked into this runbook
 
@@ -29,15 +26,12 @@ service fees.
 
 ## Deploy mode
 
-Two paths are supported by `docker-compose.prod.yml`:
+`docker-compose.prod.yml` is **pull-only**. Images are built and pushed
+to GHCR by GitHub Actions; the server only runs `docker compose pull
+&& up -d`. The Lightsail micro never compiles anything (the local
+`npm run build` is what was eating CPU credits).
 
-| Mode | What happens | When to use |
-|---|---|---|
-| **Build on server** (default) | `docker compose up -d --build` builds the images from source on the box | Simplest. ~1-min build per deploy. Default. |
-| **Pull from GHCR** | `docker compose pull && up -d` pulls images CI built on push to main | Faster deploys; reproducible. Requires GHCR login on the server. |
-
-This runbook uses build-on-server. To switch to GHCR mode, see the
-*Switching to GHCR pulls* section at the bottom.
+Full flow and operator docs: [`DEPLOYMENT.md`](../DEPLOYMENT.md).
 
 ---
 
@@ -172,18 +166,20 @@ Off-site backups are handled by pulling snapshots to your laptop over
 Tailscale (see Phase 5) — no additional cloud-storage credentials are
 needed. Leave `BACKUP_REMOTE` unset.
 
-Apply migrations and bring up the stack:
+Pull images and bring up the stack. The backend container runs
+`alembic upgrade head` automatically as part of its `CMD`, so no
+separate migration step is needed. Images are public, so no GHCR
+login is required.
 
 ```bash
-# Run migrations against the persistent volume. We use a one-shot
-# container so the same image that runs the app applies the schema.
-docker compose -f docker-compose.prod.yml run --rm backend alembic upgrade head
+# Pull the latest images that GitHub Actions pushed.
+docker compose -f docker-compose.prod.yml pull
 
 # Seed the dev watchlist (or skip and add tickers via the UI later).
 docker compose -f docker-compose.prod.yml run --rm backend python -m scripts.seed_dev
 
 # Start.
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 Verify:
@@ -316,13 +312,24 @@ curl http://wheel-server/api/system/job-runs?limit=5 | jq
 
 ### Redeploy after pushing to main
 
+Automatic. The `Build and deploy production images` workflow runs on
+every push to `main`, builds + pushes the images to GHCR, then SSHes
+in via Tailscale and runs `docker compose pull && up -d`. No manual
+action needed.
+
+To force a deploy without a code change, trigger the workflow from the
+GitHub UI (Actions → "Build and deploy production images" → Run
+workflow). To deploy by hand from the server:
+
 ```bash
 ssh admin@wheel-server
 cd /opt/penny-pincher-pro
 git pull
-docker compose -f docker-compose.prod.yml run --rm backend alembic upgrade head
-docker compose -f docker-compose.prod.yml up -d --build
+IMAGE_TAG=$(git rev-parse HEAD) docker compose -f docker-compose.prod.yml pull
+IMAGE_TAG=$(git rev-parse HEAD) docker compose -f docker-compose.prod.yml up -d
 ```
+
+Rollback and debugging: see [`DEPLOYMENT.md`](../DEPLOYMENT.md).
 
 ### Restore from a backup
 
@@ -356,32 +363,6 @@ docker compose -f docker-compose.prod.yml up -d backend
 
 Edit `.env` on the server, then `docker compose -f docker-compose.prod.yml up -d`.
 APScheduler restarts; the next pipeline run uses the new keys.
-
-## Switching to GHCR pulls (optional)
-
-After your first push to main, the `build-prod-images.yml` workflow
-publishes images to:
-
-- `ghcr.io/leviclauss/penny-pincher-pro-backend:latest`
-- `ghcr.io/leviclauss/penny-pincher-pro-frontend:latest`
-
-To deploy by pull rather than build:
-
-1. Override the compose's `build:` with `image:` in a small
-   `docker-compose.override.yml` on the server.
-2. Authenticate Docker to GHCR with a fine-grained PAT
-   (`read:packages` is enough):
-   ```bash
-   echo $GHCR_TOKEN | docker login ghcr.io -u leviclauss --password-stdin
-   ```
-3. Replace the redeploy step with:
-   ```bash
-   docker compose -f docker-compose.prod.yml pull
-   docker compose -f docker-compose.prod.yml up -d
-   ```
-
-Worth it once you have multiple servers or care about reproducible
-images. Skip while it's just one box.
 
 ## Pre-prod checklist
 
