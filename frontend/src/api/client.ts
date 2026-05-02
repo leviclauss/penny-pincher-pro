@@ -5,6 +5,9 @@ import type {
   JobInfoOut,
   JobRunOut,
   MacroPoint,
+  ScreenerConfigDetail,
+  ScreenerConfigSummary,
+  ScreenerResultsResponse,
   TickerCreate,
   TickerPatch,
   TickerSummary,
@@ -116,4 +119,34 @@ export function triggerJob(name: string): Promise<TriggerResponse> {
     "POST",
     `/api/system/jobs/${encodeURIComponent(name)}/run`,
   ).then((r) => r as TriggerResponse);
+}
+
+export function fetchScreenerConfigs(activeOnly = false): Promise<ScreenerConfigSummary[]> {
+  const qs = activeOnly ? "?active_only=true" : "";
+  return getJson<ScreenerConfigSummary[]>(`/api/screener/configs${qs}`);
+}
+
+export function fetchScreenerConfig(configId: number): Promise<ScreenerConfigDetail> {
+  return getJson<ScreenerConfigDetail>(`/api/screener/configs/${configId}`);
+}
+
+export interface ScreenerResultsParams {
+  configId?: number | null;
+  date?: string | null;
+  passedOnly?: boolean;
+  limit?: number;
+}
+
+export function fetchScreenerResults(
+  params: ScreenerResultsParams = {},
+): Promise<ScreenerResultsResponse> {
+  const qs = new URLSearchParams();
+  if (params.configId != null) qs.set("config_id", String(params.configId));
+  if (params.date) qs.set("date", params.date);
+  if (params.passedOnly !== undefined) qs.set("passed_only", String(params.passedOnly));
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  const suffix = qs.toString();
+  return getJson<ScreenerResultsResponse>(
+    `/api/screener/results${suffix ? `?${suffix}` : ""}`,
+  );
 }

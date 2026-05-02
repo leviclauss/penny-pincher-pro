@@ -26,11 +26,14 @@ migration, so unbuilt tracks already have their storage contract.
 - [x] **08 — Deployment.** Backend + frontend Dockerfiles,
       `docker-compose.prod.yml`, CI builds prod images, Lightsail +
       Tailscale runbook in [`docs/deploy.md`](docs/deploy.md).
-- [ ] **02 — Screener filters.** `screener/filters/` is empty —
-      need `base.py` (Filter ABC + `FilterContext` / `FilterResult`),
-      `registry.py`, the per-domain filter modules (technical,
-      volatility, liquidity, event, economics), `filter_configs`
-      loader, and the pipeline that writes to `screener_results`.
+- [x] **02 — Screener filters.** Tier 1–4 filter classes
+      (technical / volatility / liquidity / event), `FILTER_REGISTRY`,
+      a point-in-time `FilterContext` builder, and the pipeline
+      orchestrator with weighted scoring + sector-concentration
+      postprocessor that writes to `screener_results`. Daily
+      `screener_pipeline` job runs after `evening_pipeline`. Read-only
+      `/api/screener/configs` and `/api/screener/results` endpoints,
+      plus a `/screener` UI page ranking candidates by score.
 - [ ] **03 — Alert engine.** `alerts/triggers/` and `alerts/channels/`
       are stub `__init__.py` files — need trigger evaluation, dedup,
       and channel adapters (email / push / webhook).
@@ -41,9 +44,9 @@ migration, so unbuilt tracks already have their storage contract.
       filter forward-return evaluation and full-wheel simulation
       using synthetic Black–Scholes pricing (per the point-in-time
       rules in `06-backtesting.md`).
-- [ ] **05 — Web UI (remaining pages).** `/screener`, `/configs`,
-      `/positions`, `/alerts`, `/backtest`, `/settings`, plus any
-      mutations and auth.
+- [ ] **05 — Web UI (remaining pages).** `/configs`, `/positions`,
+      `/alerts`, `/backtest`, `/settings`, plus mutations beyond the
+      watchlist and auth.
 
 See [`CLAUDE.md`](CLAUDE.md) for conventions, the schema contract, and
 how to add a filter or a new ingested source.

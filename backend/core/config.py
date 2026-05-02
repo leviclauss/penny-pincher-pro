@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     scheduler_evening_hour: int = 17
     scheduler_evening_minute: int = 30
+    scheduler_screener_offset_minutes: int = 30
     market_calendar: str = "NYSE"
 
     telegram_bot_token: str = Field(default="")

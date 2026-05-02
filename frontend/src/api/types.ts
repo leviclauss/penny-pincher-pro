@@ -100,3 +100,46 @@ export interface UpcomingEarning {
   earnings_date: string;
   time_of_day: string | null;
 }
+
+export interface ScreenerConfigSummary {
+  id: number;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  filter_ids: string[];
+}
+
+export interface ScreenerConfigDetail extends ScreenerConfigSummary {
+  config_json: Record<string, unknown>;
+}
+
+export interface ScreenerFilterEntry {
+  passed: boolean;
+  eligible: boolean;
+  required: boolean;
+  score: number | null;
+  value: number | string | null;
+  reason: string | null;
+}
+
+export interface ScreenerResultRow {
+  date: string;
+  symbol: string;
+  config_id: number;
+  passed: boolean;
+  score: number | null;
+  sector: string | null;
+  rsi_14: number | null;
+  iv_rank: number | null;
+  iv_percentile: number | null;
+  near_200ema_pct: number | null;
+  next_earnings_date: string | null;
+  filter_results: Record<string, ScreenerFilterEntry> | null;
+}
+
+export interface ScreenerResultsResponse {
+  date: string;
+  config_id: number;
+  config_name: string;
+  rows: ScreenerResultRow[];
+}

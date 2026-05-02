@@ -30,6 +30,8 @@ from ingestion.options import ChainSource
 from ingestion.options_client import AlpacaOptionsClient, AlpacaOptionsError
 from scheduler.jobs.evening import JOB_NAME as EVENING_JOB_NAME
 from scheduler.jobs.evening import run_evening_pipeline
+from scheduler.jobs.screener import JOB_NAME as SCREENER_JOB_NAME
+from scheduler.jobs.screener import run_screener_job
 
 log = get_logger(__name__)
 
@@ -109,14 +111,27 @@ def create_and_start() -> BackgroundScheduler:
         settings.scheduler_evening_minute,
         settings.timezone,
     )
+    screener_hour, screener_minute = _add_minutes(
+        settings.scheduler_evening_hour,
+        settings.scheduler_evening_minute,
+        settings.scheduler_screener_offset_minutes,
+    )
+    _register_screener(scheduler, screener_hour, screener_minute, settings.timezone)
     scheduler.start()
     log.info(
         "scheduler.started",
         timezone=settings.timezone,
         evening_hour=settings.scheduler_evening_hour,
         evening_minute=settings.scheduler_evening_minute,
+        screener_hour=screener_hour,
+        screener_minute=screener_minute,
     )
     return scheduler
+
+
+def _add_minutes(hour: int, minute: int, delta_minutes: int) -> tuple[int, int]:
+    total = (hour * 60 + minute + delta_minutes) % (24 * 60)
+    return total // 60, total % 60
 
 
 def shutdown(scheduler: BackgroundScheduler, *, wait: bool = True) -> None:
@@ -160,6 +175,34 @@ def _evening_entry() -> None:
             options_client=options,
             market_calendar=calendar,
         )
+
+
+def _register_screener(
+    scheduler: BackgroundScheduler, hour: int, minute: int, timezone: str
+) -> None:
+    cron = f"{minute} {hour} * * mon-fri"
+    schedule_human = f"Mon-Fri {hour:02d}:{minute:02d} {timezone}"
+    scheduler.add_job(
+        _screener_entry,
+        trigger=CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute),
+        id=SCREENER_JOB_NAME,
+        replace_existing=True,
+    )
+    register_job(
+        SCREENER_JOB_NAME,
+        factory=lambda: _screener_entry,
+        description="Run every active filter config against the watchlist and persist results.",
+        cron=cron,
+        timezone=timezone,
+        schedule_human=schedule_human,
+    )
+
+
+def _screener_entry() -> None:
+    settings = get_settings()
+    calendar = settings.market_calendar or None
+    with get_session() as session:
+        run_screener_job(session, market_calendar=calendar)
 
 
 def build_alpaca_client() -> AlpacaClient | None:
