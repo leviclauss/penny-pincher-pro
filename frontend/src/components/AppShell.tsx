@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Clock, LayoutDashboard, ListChecks, Menu, Sparkles, X } from "lucide-react";
+import {
+  Activity,
+  Clock,
+  LayoutDashboard,
+  ListChecks,
+  Menu,
+  Radar,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { fetchHealth } from "@/api/client";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -16,6 +25,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/tickers", label: "Tickers", icon: ListChecks },
+  { to: "/screener", label: "Screener", icon: Radar },
   { to: "/jobs", label: "Jobs", icon: Clock },
 ];
 
