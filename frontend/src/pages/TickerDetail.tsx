@@ -19,7 +19,10 @@ export function TickerDetail(): JSX.Element {
   const { symbol } = useParams<{ symbol: string }>();
   const sym = symbol?.toUpperCase() ?? "";
 
-  const tickers = useQuery({ queryKey: ["tickers"], queryFn: fetchTickers });
+  const tickers = useQuery({
+    queryKey: ["tickers", { includeHidden: true }],
+    queryFn: () => fetchTickers(true),
+  });
   const chart = useQuery({
     queryKey: ["ticker", sym, "chart", "1y"],
     queryFn: () => fetchTickerChart(sym, "1y"),

@@ -47,7 +47,10 @@ export function WatchlistSummary(): JSX.Element {
     queryFn: fetchHealth,
     refetchInterval: 30_000,
   });
-  const tickers = useQuery({ queryKey: ["tickers"], queryFn: fetchTickers });
+  const tickers = useQuery({
+    queryKey: ["tickers", { includeHidden: true }],
+    queryFn: () => fetchTickers(true),
+  });
 
   const total = tickers.data?.length ?? 0;
   const active = tickers.data?.filter((t) => t.is_active).length ?? 0;

@@ -76,11 +76,11 @@ def _register_evening(scheduler: BackgroundScheduler, hour: int, minute: int) ->
 
 def _evening_entry() -> None:
     settings = get_settings()
-    alpaca = _build_alpaca_client()
+    alpaca = build_alpaca_client()
     if alpaca is None:
         log.warning("evening_pipeline.no_alpaca_creds_skipped")
         return
-    options = _build_options_client()
+    options = build_options_client()
     calendar = settings.market_calendar or None
     with get_session() as session:
         run_evening_pipeline(
@@ -91,14 +91,14 @@ def _evening_entry() -> None:
         )
 
 
-def _build_alpaca_client() -> AlpacaClient | None:
+def build_alpaca_client() -> AlpacaClient | None:
     try:
         return AlpacaClient()
     except AlpacaDataError:
         return None
 
 
-def _build_options_client() -> ChainSource | None:
+def build_options_client() -> ChainSource | None:
     try:
         return AlpacaOptionsClient()
     except AlpacaOptionsError:

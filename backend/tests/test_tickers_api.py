@@ -101,6 +101,7 @@ def test_list_tickers_with_data(client: TestClient) -> None:
     aapl = next(r for r in rows if r["symbol"] == "AAPL")
     assert aapl["name"] == "Apple Inc."
     assert aapl["tier"] == 1
+    assert aapl["is_hidden"] is False
     assert aapl["last_close"] == 104.5
     assert aapl["ema_200"] == 99.0
     assert aapl["iv_atm"] == pytest.approx(0.29)
@@ -183,3 +184,36 @@ def test_iv_history_returns_series(client: TestClient) -> None:
 def test_iv_history_unknown_symbol_returns_404(client: TestClient) -> None:
     resp = client.get("/api/tickers/XYZ/iv-history")
     assert resp.status_code == 404
+
+
+def test_list_excludes_hidden_by_default(client: TestClient) -> None:
+    from db import get_session
+    from db.models.market import Ticker
+
+    _seed_basic(client)
+    with get_session() as session:
+        msft = session.get(Ticker, "MSFT")
+        assert msft is not None
+        msft.is_hidden = True
+
+    resp = client.get("/api/tickers")
+    assert resp.status_code == 200
+    assert {r["symbol"] for r in resp.json()} == {"AAPL"}
+
+
+def test_list_includes_hidden_when_requested(client: TestClient) -> None:
+    from db import get_session
+    from db.models.market import Ticker
+
+    _seed_basic(client)
+    with get_session() as session:
+        msft = session.get(Ticker, "MSFT")
+        assert msft is not None
+        msft.is_hidden = True
+
+    resp = client.get("/api/tickers?include_hidden=true")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert {r["symbol"] for r in rows} == {"AAPL", "MSFT"}
+    msft_row = next(r for r in rows if r["symbol"] == "MSFT")
+    assert msft_row["is_hidden"] is True

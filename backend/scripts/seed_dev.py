@@ -43,6 +43,7 @@ def main() -> None:
             "name": name,
             "tier": tier,
             "is_active": True,
+            "is_hidden": False,
             "added_at": now,
             "updated_at": now,
         }

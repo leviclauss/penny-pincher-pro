@@ -14,12 +14,37 @@ export interface TickerSummary {
   sector: string | null;
   market_cap: number | null;
   is_active: boolean;
+  is_hidden: boolean;
   last_close: number | null;
   last_close_date: string | null;
   ema_200: number | null;
   rsi_14: number | null;
   iv_atm: number | null;
   next_earnings_date: string | null;
+}
+
+export interface TickerCreate {
+  symbol: string;
+  name?: string | null;
+  tier?: number | null;
+  notes?: string | null;
+}
+
+export interface TickerPatch {
+  is_hidden?: boolean;
+  tier?: number | null;
+  notes?: string | null;
+}
+
+export interface JobRunOut {
+  id: number;
+  job_name: string;
+  status: "running" | "success" | "failure";
+  started_at: string;
+  ended_at: string | null;
+  duration_s: number | null;
+  result_json: Record<string, unknown> | null;
+  error: string | null;
 }
 
 export interface ChartBar {
