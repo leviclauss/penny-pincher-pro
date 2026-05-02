@@ -236,20 +236,21 @@ def _refresh_iv(session: Session, symbols: Iterable[str], *, as_of: date) -> IVS
         chain = load_options_chain(session, symbol)
         if not chain:
             continue
-        spot = _latest_close(session, symbol)
-        if spot is None:
+        latest = _latest_bar(session, symbol)
+        if latest is None:
             continue
+        bar_date, spot = latest
 
         atm = compute_atm_iv(chain, spot=spot, as_of=as_of, risk_free_rate=settings.risk_free_rate)
         if atm is None:
             log.info("iv.no_atm_skipped", symbol=symbol)
             continue
 
-        history = load_iv_history(session, symbol, before=as_of)
+        history = load_iv_history(session, symbol, before=bar_date)
         rank = compute_iv_rank(history, atm)
         pct = compute_iv_percentile(history, atm)
 
-        upsert_iv_indicators(session, symbol, as_of, iv_atm=atm, iv_rank=rank, iv_percentile=pct)
+        upsert_iv_indicators(session, symbol, bar_date, iv_atm=atm, iv_rank=rank, iv_percentile=pct)
         summary.symbols_processed += 1
         summary.iv_rows_written += 1
         session.commit()
@@ -258,14 +259,16 @@ def _refresh_iv(session: Session, symbols: Iterable[str], *, as_of: date) -> IVS
     return summary
 
 
-def _latest_close(session: Session, symbol: str) -> float | None:
+def _latest_bar(session: Session, symbol: str) -> tuple[date, float] | None:
     row = session.execute(
-        select(BarDaily.close)
+        select(BarDaily.date, BarDaily.close)
         .where(BarDaily.symbol == symbol)
         .order_by(BarDaily.date.desc())
         .limit(1)
     ).first()
-    return float(row[0]) if row else None
+    if row is None:
+        return None
+    return row[0], float(row[1])
 
 
 def _affected_after_fetch(session: Session, summary: FetchSummary) -> list[str]:

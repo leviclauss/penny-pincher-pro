@@ -129,12 +129,12 @@ def test_run_full_with_options_writes_iv_atm(session: Session) -> None:
     client: FakeAlpacaClient = build_fake(["AAA"])
     run_full(session, client, ["AAA"], years=2, end=FIXTURE_END)  # type: ignore[arg-type]
 
-    latest_close = session.execute(
-        select(BarDaily.close)
+    latest_bar_date, latest_close = session.execute(
+        select(BarDaily.date, BarDaily.close)
         .where(BarDaily.symbol == "AAA")
         .order_by(BarDaily.date.desc())
         .limit(1)
-    ).scalar_one()
+    ).one()
 
     expiration = (
         FIXTURE_END.replace(month=FIXTURE_END.month + 1)
@@ -156,10 +156,13 @@ def test_run_full_with_options_writes_iv_atm(session: Session) -> None:
     assert summary.options.contracts_written == 2
     assert summary.iv.iv_rows_written == 1
 
+    # IV is stored on the symbol's latest bar date so the API (which joins
+    # IndicatorDaily to that date) sees it on calendar days the pipeline ran
+    # without a fresh bar.
     iv_atm = session.execute(
         select(IndicatorDaily.iv_atm)
         .where(IndicatorDaily.symbol == "AAA")
-        .where(IndicatorDaily.date == FIXTURE_END)
+        .where(IndicatorDaily.date == latest_bar_date)
     ).scalar_one()
     assert iv_atm == pytest.approx(0.30, abs=1e-6)
 
