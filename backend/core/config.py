@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     macro_lookback_days: int = 365
     spy_symbol: str = "SPY"
 
+    scheduler_enabled: bool = True
+    scheduler_evening_hour: int = 17
+    scheduler_evening_minute: int = 30
+    market_calendar: str = "NYSE"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
