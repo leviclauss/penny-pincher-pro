@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
+from api import earnings as earnings_router
 from api import macro as macro_router
 from api import tickers as tickers_router
 from core.config import get_settings
@@ -50,6 +51,7 @@ app = FastAPI(title="Penny Pincher Pro", version="0.1.0", lifespan=lifespan)
 
 app.include_router(tickers_router.router)
 app.include_router(macro_router.router)
+app.include_router(earnings_router.router)
 
 
 @app.get("/api/system/health", response_model=HealthStatus)
