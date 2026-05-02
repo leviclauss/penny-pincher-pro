@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { fetchTickers } from "@/api/client";
 import type { TickerSummary } from "@/api/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -77,6 +77,33 @@ function compareValues(a: string | number | null, b: string | number | null): nu
   return String(a).localeCompare(String(b));
 }
 
+function rsiTone(value: number | null): string {
+  if (value === null) return "text-muted-foreground";
+  if (value >= 70) return "text-amber-300";
+  if (value <= 30) return "text-emerald-300";
+  return "text-foreground";
+}
+
+function tierBadge(tier: number | null): JSX.Element {
+  if (tier === null) return <span className="text-muted-foreground">—</span>;
+  const palette: Record<number, string> = {
+    1: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+    2: "bg-sky-500/15 text-sky-300 ring-sky-500/30",
+    3: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
+  };
+  const cls = palette[tier] ?? "bg-muted text-muted-foreground ring-border";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ring-1",
+        cls,
+      )}
+    >
+      T{tier}
+    </span>
+  );
+}
+
 export function Tickers(): JSX.Element {
   const [sortKey, setSortKey] = useState<SortKey>("symbol");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -107,17 +134,26 @@ export function Tickers(): JSX.Element {
   };
 
   return (
-    <div className="space-y-4">
-      <header>
-        <h1 className="text-2xl font-semibold">Tickers</h1>
-        <p className="text-muted-foreground text-sm">
-          Watchlist with the latest close, EMA distance, RSI, IV, and next earnings.
+    <div className="space-y-6">
+      <header className="space-y-1.5">
+        <p className="text-primary text-xs font-semibold uppercase tracking-widest">
+          Watchlist
+        </p>
+        <h1 className="text-3xl font-semibold tracking-tight">Tickers</h1>
+        <p className="text-muted-foreground max-w-2xl text-sm">
+          Latest close, EMA distance, RSI, IV, and the next earnings event for
+          every symbol on your list.
         </p>
       </header>
 
       <Card>
         <CardHeader>
-          <CardTitle>Watchlist</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>All symbols</CardTitle>
+            <span className="text-muted-foreground text-xs">
+              {data ? `${data.length} symbols` : "—"}
+            </span>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading && <div className="text-muted-foreground text-sm">Loading…</div>}
@@ -126,39 +162,49 @@ export function Tickers(): JSX.Element {
           )}
           {data && data.length === 0 && (
             <div className="text-muted-foreground text-sm">
-              Watchlist is empty. Run <code>python -m scripts.seed_dev</code> in the
-              backend to populate it.
+              Watchlist is empty. Run{" "}
+              <code className="bg-muted rounded px-1 py-0.5 text-xs">
+                python -m scripts.seed_dev
+              </code>{" "}
+              in the backend to populate it.
             </div>
           )}
           {data && data.length > 0 && (
             <Table>
               <TableHeader>
                 <TableRow>
-                  {COLUMNS.map((col) => (
-                    <TableHead
-                      key={col.key}
-                      className={cn(
-                        "cursor-pointer select-none",
-                        col.align === "right" && "text-right",
-                      )}
-                      onClick={() => toggleSort(col.key)}
-                    >
-                      <span
+                  {COLUMNS.map((col) => {
+                    const active = sortKey === col.key;
+                    return (
+                      <TableHead
+                        key={col.key}
                         className={cn(
-                          "inline-flex items-center gap-1",
-                          col.align === "right" && "justify-end",
+                          "hover:text-foreground cursor-pointer select-none transition-colors",
+                          col.align === "right" && "text-right",
+                          active && "text-foreground",
                         )}
+                        onClick={() => toggleSort(col.key)}
                       >
-                        {col.label}
-                        {sortKey === col.key &&
-                          (sortDir === "asc" ? (
-                            <ArrowUp className="h-3 w-3" />
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1.5",
+                            col.align === "right" && "justify-end",
+                          )}
+                        >
+                          {col.label}
+                          {active ? (
+                            sortDir === "asc" ? (
+                              <ArrowUp className="text-primary h-3 w-3" />
+                            ) : (
+                              <ArrowDown className="text-primary h-3 w-3" />
+                            )
                           ) : (
-                            <ArrowDown className="h-3 w-3" />
-                          ))}
-                      </span>
-                    </TableHead>
-                  ))}
+                            <ArrowUpDown className="h-3 w-3 opacity-40" />
+                          )}
+                        </span>
+                      </TableHead>
+                    );
+                  })}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -170,27 +216,37 @@ export function Tickers(): JSX.Element {
                       onClick={() => navigate(`/tickers/${t.symbol}`)}
                       className="cursor-pointer"
                     >
-                      <TableCell className="font-semibold">{t.symbol}</TableCell>
-                      <TableCell className="text-muted-foreground">{t.name ?? "—"}</TableCell>
-                      <TableCell className="text-right">{t.tier ?? "—"}</TableCell>
+                      <TableCell className="font-semibold tracking-tight">
+                        {t.symbol}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground max-w-[180px] truncate">
+                        {t.name ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-right">{tierBadge(t.tier)}</TableCell>
                       <TableCell className="text-muted-foreground">
                         {t.sector ?? "—"}
                       </TableCell>
-                      <TableCell className="text-right">{formatNumber(t.last_close)}</TableCell>
+                      <TableCell className="text-right font-mono">
+                        {formatNumber(t.last_close)}
+                      </TableCell>
                       <TableCell
                         className={cn(
-                          "text-right",
-                          distance !== null && distance >= 0 && "text-emerald-600",
-                          distance !== null && distance < 0 && "text-red-600",
+                          "text-right font-mono",
+                          distance !== null && distance >= 0 && "text-emerald-300",
+                          distance !== null && distance < 0 && "text-red-300",
                         )}
                       >
                         {formatPercent(distance)}
                       </TableCell>
-                      <TableCell className="text-right">{formatNumber(t.rsi_14, 1)}</TableCell>
-                      <TableCell className="text-right">
-                        {t.iv_atm === null ? "—" : formatNumber(t.iv_atm * 100, 1) + "%"}
+                      <TableCell
+                        className={cn("text-right font-mono", rsiTone(t.rsi_14))}
+                      >
+                        {formatNumber(t.rsi_14, 1)}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
+                      <TableCell className="text-right font-mono">
+                        {t.iv_atm === null ? "—" : `${(t.iv_atm * 100).toFixed(1)}%`}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-right font-mono text-xs">
                         {t.next_earnings_date ?? "—"}
                       </TableCell>
                     </TableRow>

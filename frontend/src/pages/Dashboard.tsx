@@ -5,12 +5,15 @@ import { WatchlistSummary } from "@/components/WatchlistSummary";
 
 export function Dashboard(): JSX.Element {
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <p className="text-muted-foreground text-sm">
-          Daily review starting point. Macro context, watchlist freshness, and
-          near-term earnings.
+    <div className="space-y-8">
+      <header className="space-y-1.5">
+        <p className="text-primary text-xs font-semibold uppercase tracking-widest">
+          Overview
+        </p>
+        <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="text-muted-foreground max-w-2xl text-sm">
+          Macro context, watchlist freshness, and near-term earnings — your daily
+          starting point.
         </p>
       </header>
 
@@ -25,8 +28,10 @@ export function Dashboard(): JSX.Element {
               Job history lands once the scheduler is wired up.
             </p>
           </CardHeader>
-          <CardContent className="text-muted-foreground text-sm">
-            No data yet.
+          <CardContent>
+            <div className="border-border/50 text-muted-foreground flex h-32 items-center justify-center rounded-md border border-dashed text-sm">
+              No runs recorded yet
+            </div>
           </CardContent>
         </Card>
       </div>

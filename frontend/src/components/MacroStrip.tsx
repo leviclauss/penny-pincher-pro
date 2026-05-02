@@ -1,19 +1,61 @@
 import { useQuery } from "@tanstack/react-query";
+import { Activity, Gauge, LineChart, ShieldCheck } from "lucide-react";
 import { fetchMacroCurrent } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { cn } from "@/lib/utils";
 import { formatNumber } from "@/lib/format";
 
-function Pill({ tone, children }: { tone: "up" | "down" | "neutral"; children: React.ReactNode }): JSX.Element {
+function Pill({
+  tone,
+  children,
+}: {
+  tone: "up" | "down" | "neutral";
+  children: React.ReactNode;
+}): JSX.Element {
   const colors: Record<typeof tone, string> = {
-    up: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-    down: "bg-red-500/15 text-red-700 dark:text-red-300",
-    neutral: "bg-muted text-muted-foreground",
+    up: "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30",
+    down: "bg-red-500/15 text-red-300 ring-1 ring-red-500/30",
+    neutral: "bg-muted text-muted-foreground ring-1 ring-border",
   };
   return (
-    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", colors[tone])}>
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider",
+        colors[tone],
+      )}
+    >
       {children}
     </span>
+  );
+}
+
+function Stat({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  pill,
+}: {
+  icon: typeof Activity;
+  label: string;
+  value: React.ReactNode;
+  hint?: React.ReactNode;
+  pill?: React.ReactNode;
+}): JSX.Element {
+  return (
+    <div className="border-border/60 bg-background/40 flex flex-col gap-1.5 rounded-md border p-3">
+      <div className="text-muted-foreground flex items-center gap-2 text-[10px] font-medium uppercase tracking-widest">
+        <Icon className="h-3.5 w-3.5" />
+        {label}
+      </div>
+      <div className="flex items-baseline gap-2">
+        <span className="text-foreground text-2xl font-semibold tracking-tight">
+          {value}
+        </span>
+        {pill}
+      </div>
+      {hint && <div className="text-muted-foreground text-xs">{hint}</div>}
+    </div>
   );
 }
 
@@ -40,7 +82,9 @@ export function MacroStrip(): JSX.Element {
         <CardHeader>
           <CardTitle>Macro</CardTitle>
         </CardHeader>
-        <CardContent className="text-destructive text-sm">Failed to load macro data.</CardContent>
+        <CardContent className="text-destructive text-sm">
+          Failed to load macro data.
+        </CardContent>
       </Card>
     );
   }
@@ -68,48 +112,51 @@ export function MacroStrip(): JSX.Element {
     data.spy_above_200ema === null
       ? "—"
       : data.spy_above_200ema
-        ? "Above 200 EMA"
-        : "Below 200 EMA";
+        ? "Risk-on"
+        : "Risk-off";
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Macro</CardTitle>
-        <p className="text-muted-foreground text-xs">As of {data.date}</p>
+        <div className="flex items-center justify-between">
+          <CardTitle>Market context</CardTitle>
+          <span className="text-muted-foreground font-mono text-[11px]">
+            {data.date}
+          </span>
+        </div>
       </CardHeader>
-      <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div>
-          <div className="text-muted-foreground text-xs uppercase">VIX</div>
-          <div className="text-xl font-semibold">{formatNumber(data.vix_close)}</div>
-        </div>
-        <div>
-          <div className="text-muted-foreground text-xs uppercase">VIX9D</div>
-          <div className="text-xl font-semibold">{formatNumber(data.vix_9d)}</div>
-        </div>
-        <div>
-          <div className="text-muted-foreground text-xs uppercase">Term Structure</div>
-          <div className="flex items-center gap-2">
-            <span className="text-xl font-semibold">{formatNumber(term, 3)}</span>
-            <Pill tone={termTone}>{termLabel}</Pill>
-          </div>
-        </div>
-        <div>
-          <div className="text-muted-foreground text-xs uppercase">SPY Regime</div>
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "inline-block h-3 w-3 rounded-full",
-                spyTone === "up" && "bg-emerald-500",
-                spyTone === "down" && "bg-red-500",
-                spyTone === "neutral" && "bg-muted-foreground/40",
-              )}
-            />
-            <span className="text-sm">{spyLabel}</span>
-          </div>
-          <div className="text-muted-foreground mt-1 text-xs">
-            {formatNumber(data.spy_close)} / EMA {formatNumber(data.spy_ema_200)}
-          </div>
-        </div>
+      <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat icon={Activity} label="VIX" value={formatNumber(data.vix_close)} />
+        <Stat icon={Gauge} label="VIX9D" value={formatNumber(data.vix_9d)} />
+        <Stat
+          icon={LineChart}
+          label="Term structure"
+          value={formatNumber(term, 3)}
+          pill={<Pill tone={termTone}>{termLabel}</Pill>}
+        />
+        <Stat
+          icon={ShieldCheck}
+          label="SPY regime"
+          value={
+            <span className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "inline-block h-2.5 w-2.5 rounded-full",
+                  spyTone === "up" && "bg-emerald-400 shadow-[0_0_12px] shadow-emerald-400/60",
+                  spyTone === "down" && "bg-red-500 shadow-[0_0_12px] shadow-red-500/60",
+                  spyTone === "neutral" && "bg-muted-foreground/40",
+                )}
+              />
+              <span className="text-base">{spyLabel}</span>
+            </span>
+          }
+          hint={
+            <>
+              {formatNumber(data.spy_close)} <span className="opacity-50">·</span> EMA{" "}
+              {formatNumber(data.spy_ema_200)}
+            </>
+          }
+        />
       </CardContent>
     </Card>
   );

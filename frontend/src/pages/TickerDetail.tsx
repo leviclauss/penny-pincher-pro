@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, TrendingDown, TrendingUp } from "lucide-react";
 import {
   fetchTickerChart,
   fetchTickerIvHistory,
@@ -30,7 +30,6 @@ export function TickerDetail(): JSX.Element {
     queryFn: () => fetchTickerIvHistory(sym, "1y"),
     enabled: sym.length > 0,
   });
-  // Pull up to 90 days of upcoming earnings so any markers in the 1y window land.
   const earnings = useQuery({
     queryKey: ["earnings", "upcoming", 90],
     queryFn: () => fetchUpcomingEarnings(90),
@@ -50,56 +49,75 @@ export function TickerDetail(): JSX.Element {
     return <div className="text-muted-foreground">No symbol provided.</div>;
   }
 
+  const up = dayChangePct !== null && dayChangePct >= 0;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
         <Link
           to="/tickers"
-          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs uppercase tracking-widest transition-colors"
         >
-          <ChevronLeft className="h-4 w-4" /> Tickers
+          <ChevronLeft className="h-3.5 w-3.5" /> Tickers
         </Link>
-        <div className="mt-2 flex flex-wrap items-baseline gap-x-3">
-          <h1 className="text-3xl font-semibold">{sym}</h1>
-          <span className="text-muted-foreground text-base">{ticker?.name ?? "—"}</span>
-          {ticker?.tier !== null && ticker?.tier !== undefined && (
-            <span className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-xs">
-              Tier {ticker.tier}
-            </span>
-          )}
-        </div>
-        <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <span className="text-2xl font-semibold">
-            {ticker?.last_close !== null && ticker?.last_close !== undefined
-              ? formatNumber(ticker.last_close)
-              : "—"}
-          </span>
-          {dayChangePct !== null && (
-            <span
-              className={cn(
-                "text-sm font-medium",
-                dayChangePct >= 0 ? "text-emerald-600" : "text-red-600",
+        <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="flex flex-wrap items-baseline gap-x-3">
+              <h1 className="text-4xl font-semibold tracking-tight">{sym}</h1>
+              <span className="text-muted-foreground text-base">
+                {ticker?.name ?? "—"}
+              </span>
+              {ticker?.tier !== null && ticker?.tier !== undefined && (
+                <span className="border-border/60 bg-card/60 text-muted-foreground rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+                  Tier {ticker.tier}
+                </span>
               )}
-            >
-              {dayChangePct >= 0 ? "+" : ""}
-              {formatPercent(dayChangePct)}
-            </span>
-          )}
-          {ticker?.last_close_date && (
-            <span className="text-muted-foreground font-mono text-xs">
-              as of {ticker.last_close_date}
-            </span>
-          )}
+              {ticker?.sector && (
+                <span className="text-muted-foreground text-xs">{ticker.sector}</span>
+              )}
+            </div>
+            <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <span className="text-3xl font-semibold tracking-tight tabular-nums">
+                {ticker?.last_close !== null && ticker?.last_close !== undefined
+                  ? formatNumber(ticker.last_close)
+                  : "—"}
+              </span>
+              {dayChangePct !== null && (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-sm font-medium",
+                    up
+                      ? "bg-emerald-500/15 text-emerald-300"
+                      : "bg-red-500/15 text-red-300",
+                  )}
+                >
+                  {up ? (
+                    <TrendingUp className="h-3.5 w-3.5" />
+                  ) : (
+                    <TrendingDown className="h-3.5 w-3.5" />
+                  )}
+                  {dayChangePct >= 0 ? "+" : ""}
+                  {formatPercent(dayChangePct)}
+                </span>
+              )}
+              {ticker?.last_close_date && (
+                <span className="text-muted-foreground font-mono text-xs">
+                  as of {ticker.last_close_date}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Price (1y)</CardTitle>
-          <p className="text-muted-foreground text-xs">
-            Daily close with EMA overlays. Toggle the buttons to hide overlays. Dashed
-            red lines mark upcoming earnings.
-          </p>
+          <div className="flex items-center justify-between">
+            <CardTitle>Price · 1 year</CardTitle>
+            <span className="text-muted-foreground text-[11px]">
+              Click EMA chips to toggle overlays
+            </span>
+          </div>
         </CardHeader>
         <CardContent>
           {chart.isLoading && (
@@ -119,8 +137,8 @@ export function TickerDetail(): JSX.Element {
                 bars={chart.data}
                 earnings={earnings.data?.filter((e) => e.symbol === sym) ?? []}
               />
-              <div className="mt-4">
-                <h3 className="text-muted-foreground mb-2 text-xs font-medium uppercase">
+              <div className="mt-6">
+                <h3 className="text-muted-foreground mb-2 text-[10px] font-semibold uppercase tracking-widest">
                   RSI (14)
                 </h3>
                 <RsiChart bars={chart.data} />
@@ -132,9 +150,9 @@ export function TickerDetail(): JSX.Element {
 
       <Card>
         <CardHeader>
-          <CardTitle>Implied volatility (1y)</CardTitle>
+          <CardTitle>Implied volatility · 1 year</CardTitle>
           <p className="text-muted-foreground text-xs">
-            ATM IV for the front-month chain.
+            ATM IV for the front-month option chain.
           </p>
         </CardHeader>
         <CardContent>
