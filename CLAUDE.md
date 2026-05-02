@@ -37,6 +37,8 @@ Two tracks:
 ```
 backend/
   api/              FastAPI app, route modules (per resource)
+                    main.py wires routers; one file per resource
+                    (tickers.py, macro.py, earnings.py, …)
   core/             config, logging, time — cross-cutting
   db/
     session.py      Base, engine, sessionmaker, get_session() ctx mgr
@@ -66,10 +68,11 @@ backend/
 
 frontend/
   src/
-    api/            fetch helpers (TanStack Query inputs)
-    lib/            utils (cn, etc.)
-    pages/          (added later)
-    components/     (added later)
+    api/            client.ts (typed fetch helpers) + types.ts
+    lib/            utils (cn) + format helpers
+    pages/          Dashboard, Tickers, TickerDetail, NotFound
+    components/     AppShell + ui/ (shadcn-shaped Card/Button/Table)
+                    + charts/ (PriceChart, RsiChart, IvHistoryChart)
 
 docs/planning/      Product spec (00-overview … 08-deployment)
 data/               SQLite db (gitignored)
@@ -169,6 +172,49 @@ cd backend && python -m scripts.seed_dev
 make ingest-full           # ~5 years of bars + indicators
 make run-backend
 ```
+
+## API surface (today)
+
+Read-only, no auth. Routes are wired in `backend/api/main.py`; one
+file per resource under `backend/api/`:
+
+| Route | Source | Notes |
+|---|---|---|
+| `GET /api/system/health` | `api/main.py` | last bar date, bar count |
+| `GET /api/tickers` | `api/tickers.py` | watchlist + latest close, EMA200, RSI, IV ATM, next earnings |
+| `GET /api/tickers/{symbol}/chart?range=1y` | `api/tickers.py` | OHLCV joined with EMA20/50/200 + RSI |
+| `GET /api/tickers/{symbol}/iv-history?range=1y` | `api/tickers.py` | iv_atm / iv_rank / iv_percentile series |
+| `GET /api/macro/current` | `api/macro.py` | most recent macro_daily row, or null |
+| `GET /api/macro/history?range=6m` | `api/macro.py` | VIX/SPY series |
+| `GET /api/earnings/upcoming?days=7` | `api/earnings.py` | active-watchlist earnings within window |
+
+Range tokens accepted by chart/IV/macro endpoints: `1m`, `3m`, `6m`,
+`1y`, `2y`, `5y`, `max` (subset varies by endpoint).
+
+## Web UI status
+
+Routes shipped (read-only, mobile-responsive shell with sidebar nav):
+
+- `/` — Dashboard: macro strip (VIX, VIX9D, term-structure pill,
+  SPY-vs-200-EMA light), watchlist freshness, upcoming earnings (next
+  7 days). "Recent ingestion runs" placeholder waits on `job_runs`.
+- `/tickers` — Sortable watchlist table; row click → ticker detail.
+- `/tickers/{symbol}` — Header (last close + day change), 1y price
+  chart with toggleable EMA 20/50/200 overlays and earnings reference
+  lines, RSI(14) sub-panel, IV ATM history.
+
+Stack additions:
+- `react-router-dom` v6 for routing.
+- `recharts` for price/RSI/IV charts (Lightweight Charts can replace
+  later if/when we want true candlesticks).
+- shadcn-shaped primitives live directly in `src/components/ui/` —
+  no shadcn CLI; design tokens are already in `src/index.css`.
+- Every fetch goes through TanStack Query; helpers in
+  `src/api/client.ts`, response shapes in `src/api/types.ts`.
+
+Out of scope until later sessions: `/screener`, `/configs`,
+`/positions`, `/alerts`, `/backtest`, `/settings`, auth, and any
+mutations.
 
 ## How to add a screener filter (partner track)
 
