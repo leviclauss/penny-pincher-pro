@@ -143,3 +143,101 @@ export interface ScreenerResultsResponse {
   config_name: string;
   rows: ScreenerResultRow[];
 }
+
+export type PositionState = "short_put" | "long_shares" | "covered_call" | "closed";
+
+export interface PositionLegOut {
+  id: number;
+  leg_type: string;
+  symbol: string;
+  expiration: string | null;
+  strike: number | null;
+  contracts: number | null;
+  shares: number | null;
+  entry_price: number | null;
+  exit_price: number | null;
+  entry_date: string | null;
+  exit_date: string | null;
+  outcome: string | null;
+  realized_pnl: number | null;
+  fees: number;
+}
+
+export interface PositionSnapshotOut {
+  snapshot_at: string;
+  underlying_price: number | null;
+  option_mid: number | null;
+  unrealized_pnl: number | null;
+  pct_max_profit: number | null;
+  delta: number | null;
+  dte: number | null;
+}
+
+export interface PositionOut {
+  id: number;
+  symbol: string;
+  state: PositionState | string;
+  cycle_id: number | null;
+  opened_at: string;
+  closed_at: string | null;
+  notes: string | null;
+  legs: PositionLegOut[];
+  latest_snapshot: PositionSnapshotOut | null;
+}
+
+export interface PositionAttributionOut {
+  position_id: number;
+  symbol: string;
+  days_in_cycle: number | null;
+  total_premium_collected: number;
+  shares_pnl: number;
+  realized_pnl: number;
+  cost_basis_per_share: number | null;
+  capital_tied_up: number | null;
+  annualized_return: number | null;
+  was_assigned: boolean;
+}
+
+export interface OpenShortPutInput {
+  symbol: string;
+  expiration: string;
+  strike: number;
+  contracts: number;
+  credit: number;
+  opened_on: string;
+  fees?: number;
+  notes?: string | null;
+}
+
+export interface OpenCoveredCallInput {
+  expiration: string;
+  strike: number;
+  contracts: number;
+  credit: number;
+  opened_on: string;
+  fees?: number;
+}
+
+export interface CloseDebitInput {
+  debit: number;
+  closed_on: string;
+  fees?: number;
+}
+
+export interface ExpireInput {
+  expired_on: string;
+}
+
+export interface AssignInput {
+  assigned_on: string;
+}
+
+export interface CalledAwayInput {
+  called_on: string;
+}
+
+export interface CloseSharesInput {
+  sale_price: number;
+  closed_on: string;
+  fees?: number;
+}

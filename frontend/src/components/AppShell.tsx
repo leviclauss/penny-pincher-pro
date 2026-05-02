@@ -3,6 +3,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
+  Briefcase,
   Clock,
   LayoutDashboard,
   ListChecks,
@@ -26,6 +27,7 @@ const NAV: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/tickers", label: "Tickers", icon: ListChecks },
   { to: "/screener", label: "Screener", icon: Radar },
+  { to: "/positions", label: "Positions", icon: Briefcase },
   { to: "/jobs", label: "Jobs", icon: Clock },
 ];
 
