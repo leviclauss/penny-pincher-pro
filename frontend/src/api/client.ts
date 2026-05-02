@@ -2,11 +2,13 @@ import type {
   ChartBar,
   HealthStatus,
   IVPoint,
+  JobInfoOut,
   JobRunOut,
   MacroPoint,
   TickerCreate,
   TickerPatch,
   TickerSummary,
+  TriggerResponse,
   UpcomingEarning,
 } from "./types";
 
@@ -99,4 +101,19 @@ export function fetchJobRuns(jobName: string, limit = 5): Promise<JobRunOut[]> {
   return getJson<JobRunOut[]>(
     `/api/system/job-runs?job_name=${encodeURIComponent(jobName)}&limit=${limit}`,
   );
+}
+
+export function fetchAllJobRuns(limit = 5): Promise<JobRunOut[]> {
+  return getJson<JobRunOut[]>(`/api/system/job-runs?limit=${limit}`);
+}
+
+export function fetchJobs(): Promise<JobInfoOut[]> {
+  return getJson<JobInfoOut[]>("/api/system/jobs");
+}
+
+export function triggerJob(name: string): Promise<TriggerResponse> {
+  return mutateJson<TriggerResponse>(
+    "POST",
+    `/api/system/jobs/${encodeURIComponent(name)}/run`,
+  ).then((r) => r as TriggerResponse);
 }

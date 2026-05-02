@@ -132,7 +132,14 @@ def test_trigger_runs_registered_job(client: TestClient) -> None:
         with get_session() as session:
             session.add(JobRun(job_name="manual_demo", started_at=utcnow(), status="success"))
 
-    register_job("manual_demo", lambda: body)
+    register_job(
+        "manual_demo",
+        factory=lambda: body,
+        description="manual test",
+        cron="0 0 * * *",
+        timezone="UTC",
+        schedule_human="Daily 00:00 UTC",
+    )
 
     response = client.post("/api/system/jobs/manual_demo/run")
     assert response.status_code == 202
@@ -152,3 +159,69 @@ def test_trigger_runs_registered_job(client: TestClient) -> None:
                 break
         time.sleep(0.05)
     assert row is not None
+
+
+def test_jobs_endpoint_lists_registered_jobs(client: TestClient) -> None:
+    register_job(
+        "demo_job",
+        factory=lambda: lambda: None,
+        description="A demo job",
+        cron="30 17 * * mon-fri",
+        timezone="America/Los_Angeles",
+        schedule_human="Mon-Fri 17:30 America/Los_Angeles",
+    )
+
+    response = client.get("/api/system/jobs")
+    assert response.status_code == 200
+    payload = response.json()
+    names = {entry["name"] for entry in payload}
+    assert "demo_job" in names
+    demo = next(entry for entry in payload if entry["name"] == "demo_job")
+    assert demo["description"] == "A demo job"
+    assert demo["cron"] == "30 17 * * mon-fri"
+    assert demo["schedule"] == "Mon-Fri 17:30 America/Los_Angeles"
+    # SCHEDULER_ENABLED=false in fixture → not enabled, no next_run_at.
+    assert demo["enabled"] is False
+    assert demo["next_run_at"] is None
+    assert demo["last_run"] is None
+
+
+def test_jobs_endpoint_includes_last_run(client: TestClient) -> None:
+    from core.time import utcnow
+    from db import get_session
+
+    register_job(
+        "with_history",
+        factory=lambda: lambda: None,
+        description="Has run history",
+        cron="0 9 * * *",
+        timezone="UTC",
+        schedule_human="Daily 09:00 UTC",
+    )
+
+    with get_session() as session:
+        session.add_all(
+            [
+                JobRun(
+                    job_name="with_history",
+                    started_at=utcnow(),
+                    ended_at=utcnow(),
+                    status="success",
+                    result_json={"bars": 42},
+                ),
+                JobRun(
+                    job_name="with_history",
+                    started_at=utcnow(),
+                    ended_at=utcnow(),
+                    status="failure",
+                    error="kaboom",
+                ),
+            ]
+        )
+
+    response = client.get("/api/system/jobs")
+    assert response.status_code == 200
+    entry = next(e for e in response.json() if e["name"] == "with_history")
+    assert entry["last_run"] is not None
+    assert entry["last_run"]["status"] == "failure"
+    assert entry["last_run"]["error"] == "kaboom"

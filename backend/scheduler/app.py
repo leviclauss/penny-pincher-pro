@@ -16,6 +16,8 @@ same ``job_runs`` table.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -32,23 +34,81 @@ from scheduler.jobs.evening import run_evening_pipeline
 log = get_logger(__name__)
 
 JobBody = Callable[[], None]
-JOB_REGISTRY: dict[str, Callable[[], JobBody]] = {}
 
 
-def register_job(name: str, factory: Callable[[], JobBody]) -> None:
-    """Register a job body so manual triggers can resolve it by name."""
-    JOB_REGISTRY[name] = factory
+@dataclass(frozen=True)
+class JobInfo:
+    """Static metadata about a registered job — paired with live scheduler state at read time."""
+
+    name: str
+    description: str
+    cron: str
+    timezone: str
+    schedule_human: str
+    factory: Callable[[], JobBody]
+
+
+@dataclass(frozen=True)
+class JobStatus:
+    """Snapshot of a registered job: metadata + live scheduler state."""
+
+    info: JobInfo
+    enabled: bool
+    next_run_at: datetime | None
+
+
+JOB_REGISTRY: dict[str, JobInfo] = {}
+
+
+def register_job(
+    name: str,
+    *,
+    factory: Callable[[], JobBody],
+    description: str,
+    cron: str,
+    timezone: str,
+    schedule_human: str,
+) -> None:
+    """Record metadata for a job so manual triggers and the UI can resolve it by name."""
+    JOB_REGISTRY[name] = JobInfo(
+        name=name,
+        description=description,
+        cron=cron,
+        timezone=timezone,
+        schedule_human=schedule_human,
+        factory=factory,
+    )
 
 
 def get_job_body(name: str) -> JobBody | None:
-    factory = JOB_REGISTRY.get(name)
-    return factory() if factory is not None else None
+    info = JOB_REGISTRY.get(name)
+    return info.factory() if info is not None else None
+
+
+def list_jobs(scheduler: BackgroundScheduler | None) -> list[JobStatus]:
+    """Combine the static registry with live APScheduler state for every known job."""
+    statuses: list[JobStatus] = []
+    for name, info in JOB_REGISTRY.items():
+        if scheduler is None:
+            statuses.append(JobStatus(info=info, enabled=False, next_run_at=None))
+            continue
+        job = scheduler.get_job(name)
+        if job is None:
+            statuses.append(JobStatus(info=info, enabled=False, next_run_at=None))
+        else:
+            statuses.append(JobStatus(info=info, enabled=True, next_run_at=job.next_run_time))
+    return statuses
 
 
 def create_and_start() -> BackgroundScheduler:
     settings = get_settings()
     scheduler = BackgroundScheduler(timezone=settings.timezone)
-    _register_evening(scheduler, settings.scheduler_evening_hour, settings.scheduler_evening_minute)
+    _register_evening(
+        scheduler,
+        settings.scheduler_evening_hour,
+        settings.scheduler_evening_minute,
+        settings.timezone,
+    )
     scheduler.start()
     log.info(
         "scheduler.started",
@@ -64,14 +124,25 @@ def shutdown(scheduler: BackgroundScheduler, *, wait: bool = True) -> None:
     log.info("scheduler.stopped")
 
 
-def _register_evening(scheduler: BackgroundScheduler, hour: int, minute: int) -> None:
+def _register_evening(
+    scheduler: BackgroundScheduler, hour: int, minute: int, timezone: str
+) -> None:
+    cron = f"{minute} {hour} * * mon-fri"
+    schedule_human = f"Mon-Fri {hour:02d}:{minute:02d} {timezone}"
     scheduler.add_job(
         _evening_entry,
         trigger=CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute),
         id=EVENING_JOB_NAME,
         replace_existing=True,
     )
-    register_job(EVENING_JOB_NAME, lambda: _evening_entry)
+    register_job(
+        EVENING_JOB_NAME,
+        factory=lambda: _evening_entry,
+        description=("Post-close pipeline: bars → indicators → options → IV → earnings → macro."),
+        cron=cron,
+        timezone=timezone,
+        schedule_human=schedule_human,
+    )
 
 
 def _evening_entry() -> None:

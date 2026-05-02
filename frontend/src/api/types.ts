@@ -47,6 +47,23 @@ export interface JobRunOut {
   error: string | null;
 }
 
+export interface JobInfoOut {
+  name: string;
+  description: string;
+  schedule: string;
+  cron: string;
+  timezone: string;
+  enabled: boolean;
+  next_run_at: string | null;
+  last_run: JobRunOut | null;
+}
+
+export interface TriggerResponse {
+  job_name: string;
+  accepted: boolean;
+  detail: string;
+}
+
 export interface ChartBar {
   date: string;
   open: number;
