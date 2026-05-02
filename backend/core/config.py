@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     scheduler_evening_minute: int = 30
     market_calendar: str = "NYSE"
 
+    telegram_bot_token: str = Field(default="")
+    telegram_chat_id: str = Field(default="")
+    telegram_parse_mode: str = "MarkdownV2"
+    telegram_disable_preview: bool = True
+    telegram_timeout_s: float = 10.0
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

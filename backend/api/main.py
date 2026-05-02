@@ -14,6 +14,7 @@ from typing import cast
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 
+from api import alerts as alerts_router
 from api import earnings as earnings_router
 from api import macro as macro_router
 from api import tickers as tickers_router
@@ -51,3 +52,4 @@ app.include_router(system_router)
 app.include_router(tickers_router.router)
 app.include_router(macro_router.router)
 app.include_router(earnings_router.router)
+app.include_router(alerts_router.router)
