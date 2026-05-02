@@ -1,0 +1,146 @@
+"""Tests for the /api/tickers router."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from datetime import date, timedelta
+from pathlib import Path
+
+import pytest
+from alembic.config import Config
+from fastapi.testclient import TestClient
+
+from alembic import command
+
+
+@pytest.fixture
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    db_path = tmp_path / "tickers.db"
+    url = f"sqlite:///{db_path}"
+    monkeypatch.setenv("DATABASE_URL", url)
+
+    from core.config import get_settings
+    from db import session as db_session
+
+    get_settings.cache_clear()
+    db_session.get_engine.cache_clear()
+    db_session.get_sessionmaker.cache_clear()
+
+    backend_root = Path(__file__).resolve().parents[1]
+    cfg = Config(str(backend_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(backend_root / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", url)
+    command.upgrade(cfg, "head")
+
+    from api.main import app
+
+    with TestClient(app) as c:
+        yield c
+
+    get_settings.cache_clear()
+    db_session.get_engine.cache_clear()
+    db_session.get_sessionmaker.cache_clear()
+
+
+def _seed_basic(client: TestClient) -> None:
+    from db import get_session
+    from db.models.market import BarDaily, Earnings, IndicatorDaily, Ticker
+
+    today = date.today()
+    with get_session() as session:
+        session.add_all(
+            [
+                Ticker(symbol="AAPL", name="Apple Inc.", tier=1, sector="Tech", is_active=True),
+                Ticker(symbol="MSFT", name="Microsoft", tier=1, sector="Tech", is_active=True),
+            ]
+        )
+        session.flush()
+        for i, day_offset in enumerate(range(5, 0, -1)):
+            d = today - timedelta(days=day_offset)
+            session.add(
+                BarDaily(
+                    symbol="AAPL",
+                    date=d,
+                    open=100.0 + i,
+                    high=101.0 + i,
+                    low=99.0 + i,
+                    close=100.5 + i,
+                    volume=1000 + i,
+                )
+            )
+            session.add(
+                IndicatorDaily(
+                    symbol="AAPL",
+                    date=d,
+                    ema_20=100.0 + i,
+                    ema_50=99.0 + i,
+                    ema_200=95.0 + i,
+                    rsi_14=55.0 + i,
+                    iv_atm=0.25 + 0.01 * i,
+                    iv_rank=50.0 + i,
+                    iv_percentile=60.0 + i,
+                )
+            )
+        session.add(
+            Earnings(symbol="AAPL", earnings_date=today + timedelta(days=10), time_of_day="amc")
+        )
+
+
+def test_list_tickers_empty(client: TestClient) -> None:
+    resp = client.get("/api/tickers")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_list_tickers_with_data(client: TestClient) -> None:
+    _seed_basic(client)
+    resp = client.get("/api/tickers")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert {r["symbol"] for r in rows} == {"AAPL", "MSFT"}
+    aapl = next(r for r in rows if r["symbol"] == "AAPL")
+    assert aapl["name"] == "Apple Inc."
+    assert aapl["tier"] == 1
+    assert aapl["last_close"] == 104.5
+    assert aapl["ema_200"] == 99.0
+    assert aapl["iv_atm"] == pytest.approx(0.29)
+    assert aapl["next_earnings_date"] is not None
+    msft = next(r for r in rows if r["symbol"] == "MSFT")
+    assert msft["last_close"] is None
+    assert msft["next_earnings_date"] is None
+
+
+def test_chart_returns_bars_with_indicators(client: TestClient) -> None:
+    _seed_basic(client)
+    resp = client.get("/api/tickers/AAPL/chart?range=1y")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 5
+    assert rows[0]["close"] == 100.5
+    assert rows[-1]["ema_200"] == 99.0
+
+
+def test_chart_unknown_symbol_returns_404(client: TestClient) -> None:
+    resp = client.get("/api/tickers/XYZ/chart")
+    assert resp.status_code == 404
+
+
+def test_chart_rejects_unknown_range(client: TestClient) -> None:
+    _seed_basic(client)
+    resp = client.get("/api/tickers/AAPL/chart?range=banana")
+    assert resp.status_code == 400
+
+
+def test_iv_history_returns_series(client: TestClient) -> None:
+    _seed_basic(client)
+    resp = client.get("/api/tickers/AAPL/iv-history?range=1y")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 5
+    assert rows[0]["iv_atm"] == pytest.approx(0.25)
+    assert rows[-1]["iv_rank"] == 54.0
+
+
+def test_iv_history_unknown_symbol_returns_404(client: TestClient) -> None:
+    resp = client.get("/api/tickers/XYZ/iv-history")
+    assert resp.status_code == 404
