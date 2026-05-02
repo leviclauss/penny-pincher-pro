@@ -35,7 +35,9 @@ class FakeFinnhubClient:
         symbol: str | None = None,
     ) -> list[EarningsRecord]:
         self.calls.append({"from_date": from_date, "to_date": to_date, "symbol": symbol})
-        return list(self._records)
+        if symbol is None:
+            return list(self._records)
+        return [r for r in self._records if r.symbol == symbol]
 
 
 @pytest.fixture
@@ -89,7 +91,8 @@ def test_passes_window_to_client(session: Session) -> None:
     client = FakeFinnhubClient([])
     fetch_earnings(session, client, lookahead_days=45, as_of=date(2026, 5, 1))
     assert client.calls == [
-        {"from_date": date(2026, 5, 1), "to_date": date(2026, 6, 15), "symbol": None}
+        {"from_date": date(2026, 5, 1), "to_date": date(2026, 6, 15), "symbol": "AAPL"},
+        {"from_date": date(2026, 5, 1), "to_date": date(2026, 6, 15), "symbol": "MSFT"},
     ]
 
 

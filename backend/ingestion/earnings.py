@@ -1,13 +1,15 @@
 """Earnings calendar fetcher.
 
 Pulls the next ``EARNINGS_LOOKAHEAD_DAYS`` of earnings dates from Finnhub
-(filtered down to active tickers in our watchlist) and upserts them into the
-``earnings`` table keyed by ``(symbol, earnings_date)``. Re-running on the
-same window is idempotent and refreshes ``time_of_day`` if Finnhub revised it.
+for each active watchlist ticker and upserts them into the ``earnings``
+table keyed by ``(symbol, earnings_date)``. Re-running on the same window
+is idempotent and refreshes ``time_of_day`` if Finnhub revised it.
 
-A single Finnhub call returns the entire US calendar for the window — we
-filter client-side rather than issuing one call per symbol, which keeps us
-well under the 60 cpm free-tier rate limit even with a 100+ ticker watchlist.
+We issue one call per symbol rather than a single bulk-calendar fetch:
+the bulk endpoint silently omits some upcoming reports (observed: MSTR
+2026-05-05 missing from bulk but present when queried by symbol), while
+per-symbol queries return the full schedule. With the 60 cpm free-tier
+limit and our small watchlist this is well within budget.
 """
 
 from __future__ import annotations
@@ -60,26 +62,29 @@ def fetch_earnings(
     as_of: date | None = None,
 ) -> EarningsFetchSummary:
     """Fetch + persist earnings for active tickers over the next ``lookahead_days``."""
-    target = set(_resolve_symbols(session, symbols))
+    target = _resolve_symbols(session, symbols)
     today = as_of or _today_utc()
     to_date = today + timedelta(days=lookahead_days)
 
-    records = client.get_earnings_calendar(from_date=today, to_date=to_date)
-    filtered = [r for r in records if r.symbol in target]
+    collected: list[EarningsRecord] = []
+    for sym in target:
+        records = client.get_earnings_calendar(from_date=today, to_date=to_date, symbol=sym)
+        collected.extend(r for r in records if r.symbol == sym)
 
     fetched_at = utcnow()
-    written = _upsert_earnings(session, filtered, fetched_at) if filtered else 0
+    written = _upsert_earnings(session, collected, fetched_at) if collected else 0
     if written:
         session.commit()
 
+    in_window = len({r.symbol for r in collected})
     log.info(
         "earnings.fetch.done",
         symbols=len(target),
-        in_window=len({r.symbol for r in filtered}),
+        in_window=in_window,
         rows=written,
     )
     return EarningsFetchSummary(
-        symbols_in_window=len({r.symbol for r in filtered}),
+        symbols_in_window=in_window,
         rows_written=written,
         window_from=today,
         window_to=to_date,
