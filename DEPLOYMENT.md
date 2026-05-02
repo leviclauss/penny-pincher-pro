@@ -42,11 +42,14 @@ Settings → Secrets and variables → Actions:
 
 | Name | Value |
 |---|---|
-| `TS_OAUTH_CLIENT_ID` | Tailscale OAuth client ID. Tailscale admin → Settings → OAuth clients. Scope: `auth_keys`. Tag: `tag:ci`. |
-| `TS_OAUTH_SECRET` | Matching OAuth secret. |
+| `TS_OAUTH_CLIENT_ID` | Tailscale OAuth client ID. Tailscale admin → Settings → Trust credentials → + Credential. Scope: `auth_keys` (write). Tag: `tag:ci`. |
+| `TS_OAUTH_SECRET` | Matching OAuth secret (shown once, on creation). |
 | `LIGHTSAIL_HOST` | `wheel-server` (Tailscale MagicDNS name). |
 | `LIGHTSAIL_USER` | `admin`. |
-| `LIGHTSAIL_SSH_KEY` | PEM private key. Generate a fresh keypair just for the runner; append the public half to `~admin/.ssh/authorized_keys` on the box. |
+
+No SSH key secret is required: the deploy job reaches the server via
+**Tailscale SSH** (the server runs `tailscaled --ssh`), which authenticates
+by Tailscale identity, not `~/.ssh/authorized_keys`.
 
 App secrets (`ALPACA_*`, `FINNHUB_*`, `TELEGRAM_*`, etc.) live in
 `/opt/penny-pincher-pro/.env` on the server. They are **not** stored in
@@ -54,19 +57,24 @@ GitHub and **not** baked into images.
 
 ## One-time prep
 
-On the Tailscale admin console:
-1. Create an OAuth client with `auth_keys` scope; record id + secret.
-2. Add an ACL rule allowing `tag:ci` to reach `wheel-server:22`.
+**On the Tailscale admin console** (https://login.tailscale.com/admin):
 
-On your laptop:
-```bash
-ssh-keygen -t ed25519 -f ~/.ssh/penny_pincher_deploy -C "gha-deploy"
-ssh admin@wheel-server "cat >> ~/.ssh/authorized_keys" < ~/.ssh/penny_pincher_deploy.pub
-```
-Paste the contents of `~/.ssh/penny_pincher_deploy` into the
-`LIGHTSAIL_SSH_KEY` GitHub secret.
+1. **Settings → Trust credentials → + Credential** → OAuth client. Scope:
+   `auth_keys` (write). Tag: `tag:ci`. Copy the client id + secret into
+   GitHub secrets immediately — the secret is shown once.
+2. **Access controls (policy file):** the policy must declare `tag:ci`
+   and `tag:server` as tag owners, allow `tag:ci` to reach
+   `tag:server:22`, and grant Tailscale SSH from both `autogroup:member`
+   (you) and `tag:ci` (the runner) to `tag:server` as user `admin`. The
+   working policy lives in this repo's history; the relevant blocks are
+   `tagOwners`, `acls`, and `ssh`.
+3. **Machines → wheel-server:** make sure the device carries `tag:server`
+   (not `tag:ci`, not untagged). If you need to change tags on a device
+   that's already joined the tailnet, edit them in the admin UI; if
+   that's blocked, run `sudo tailscale up --advertise-tags=tag:server`
+   on the box (browser re-auth required).
 
-On the server (only the very first time switching to pull-mode):
+**On the server (only the very first time switching to pull-mode):**
 ```bash
 ssh admin@wheel-server
 cd /opt/penny-pincher-pro
@@ -116,10 +124,16 @@ issue. Re-run on transient failures.
 
 **The deploy job failed.** Check which step:
 - *Connect to Tailscale*: OAuth secrets wrong, or `tag:ci` is missing
-  from the Tailscale ACL.
-- *Pull and restart on Lightsail*: SSH key mismatch, host unreachable
-  (`tailscale status` on the box), or the `docker compose` command
-  failed. The action prints the full server-side stdout/stderr.
+  from the policy's `tagOwners` block.
+- *Pull and restart on Lightsail*: most common causes:
+  - "tailnet policy does not permit you to SSH to this node" — the
+    policy `ssh` block is missing a `tag:ci → tag:server` rule, or
+    wheel-server isn't tagged `tag:server`. Verify with
+    `tailscale whois 100.64.236.98` from your laptop.
+  - Host unreachable — `tailscale status` on the box, or
+    `tailscale ping wheel-server` from your laptop.
+  - `docker compose` command failed — the runner streams the full
+    server-side stdout/stderr in the job log.
 
 **The deploy succeeded but the app is broken.** SSH in:
 ```bash
