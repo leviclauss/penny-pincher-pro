@@ -12,12 +12,6 @@ on:
       - "frontend/**"
       - "docker-compose.prod.yml"
       - ".github/workflows/build-prod-images.yml"
-  pull_request:
-    paths:
-      - "backend/**"
-      - "frontend/**"
-      - "docker-compose.prod.yml"
-      - ".github/workflows/build-prod-images.yml"
   workflow_dispatch:
 
 concurrency:
