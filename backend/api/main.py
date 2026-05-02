@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
+from api import tickers as tickers_router
 from core.config import get_settings
 from core.logging import configure_logging, get_logger
 from core.time import utcnow
@@ -45,6 +46,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Penny Pincher Pro", version="0.1.0", lifespan=lifespan)
+
+app.include_router(tickers_router.router)
 
 
 @app.get("/api/system/health", response_model=HealthStatus)
