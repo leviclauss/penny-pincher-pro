@@ -25,7 +25,9 @@ Two tracks:
 - Python 3.11+, FastAPI, SQLAlchemy 2.x (Mapped[] / select() style),
   Alembic, Pydantic v2 + pydantic-settings, alpaca-py, `ta` (indicators),
   `py_vollib` (Black-Scholes IV inversion fallback), `httpx` (Finnhub +
-  Yahoo Finance HTTP), pandas, structlog, tenacity, click.
+  Yahoo Finance HTTP), `APScheduler` (embedded scheduler),
+  `pandas_market_calendars` (NYSE holiday awareness), pandas, structlog,
+  tenacity, click.
 - pytest + pytest-asyncio + syrupy (snapshots).
 - ruff (lint + format), mypy strict.
 - SQLite for v1 (Postgres-ready via SQLAlchemy).
@@ -62,7 +64,11 @@ backend/
       technical.py | volatility.py | liquidity.py | event.py | economics.py
     pipeline.py     Loads config, runs filters, persists results
     registry.py     Maps filter ID strings to classes
-  scheduler/        APScheduler jobs (later session)
+  scheduler/
+    app.py          BackgroundScheduler factory + JOB_REGISTRY
+    context.py      job_run() context manager
+    jobs/
+      evening.py    Post-close pipeline (bars → indicators → options → IV)
   alerts/           Triggers + channel adapters (later session)
   positions/        Wheel lifecycle + management rules (later session)
   backtest/         Filter forward-return + full strategy sim (later)
@@ -124,6 +130,9 @@ Schema decisions worth knowing:
   source of truth); the macro fetcher must run after the indicator step.
 - `macro_daily.vix_term_structure` = `vix_9d / vix_close`; values < 1
   indicate backwardation per doc 01.
+- `job_runs` is written by every scheduled or manually-triggered job
+  via the ``scheduler.context.job_run`` context manager — always one
+  row per execution, including failures (status=failure + error).
 - JSON columns use SQLAlchemy `JSON` (TEXT on SQLite, JSONB on Postgres).
 - Foreign keys cascade on positions/backtest child tables.
 - Composite primary keys for time-series rows (`(symbol, date)`,
@@ -170,7 +179,10 @@ Schema decisions worth knowing:
 | Daily ingestion | `make ingest-incremental` |
 | Skip options (fast bars-only) | `python -m ingestion.pipeline --incremental --skip-options` |
 | Skip everything but bars | `python -m ingestion.pipeline --incremental --skip-options --skip-earnings --skip-macro` |
-| Backend dev server | `make run-backend` |
+| Backend dev server (with scheduler) | `make run-backend` |
+| Backend dev server (no scheduler) | `SCHEDULER_ENABLED=false make run-backend` |
+| Trigger a job manually | `curl -X POST http://localhost:8000/api/system/jobs/evening_pipeline/run` |
+| List recent job runs | `curl http://localhost:8000/api/system/job-runs` |
 | Frontend dev server | `make run-frontend` |
 | Update indicator snapshot | `cd backend && pytest tests/test_indicators.py --snapshot-update` |
 
