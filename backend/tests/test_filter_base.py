@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import pandas as pd
 import pytest
@@ -79,12 +79,12 @@ def test_register_and_resolve_round_trip() -> None:
 
 
 def test_register_rejects_missing_id() -> None:
-    with pytest.raises(TypeError, match="non-empty class-level 'id"):
+    class _NoId:
+        def evaluate(self, ctx: FilterContext, params: dict[str, Any]) -> FilterResult:
+            return FilterResult(passed=True)
 
-        @register
-        class _NoId:
-            def evaluate(self, ctx: FilterContext, params: dict[str, Any]) -> FilterResult:
-                return FilterResult(passed=True)
+    with pytest.raises(TypeError, match="non-empty class-level 'id"):
+        register(cast("type[Filter]", _NoId))
 
 
 def test_register_rejects_duplicate_id() -> None:
