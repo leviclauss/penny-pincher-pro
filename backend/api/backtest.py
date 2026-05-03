@@ -88,6 +88,7 @@ class BacktestTradeOut(BaseModel):
     realized_pnl: float | None
     realized_pnl_pct: float | None
     fees: float
+    meta: dict[str, Any] | None
 
 
 class BacktestRunOut(BaseModel):
@@ -434,6 +435,7 @@ def _trade_out(t: BacktestTrade, mode: str) -> BacktestTradeOut:
         realized_pnl=realized_pnl,
         realized_pnl_pct=realized_pnl_pct,
         fees=t.fees,
+        meta=t.meta,
     )
 
 
