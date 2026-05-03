@@ -82,6 +82,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["PLR2004", "S101", "PLC0415"]
 "alembic/env.py" = ["E402"]
+# ntfy.py intentionally maps unicode dashes/quotes for ASCII-safe headers.
+"alerts/channels/ntfy.py" = ["RUF001"]
 
 [tool.ruff.format]
 quote-style = "double"

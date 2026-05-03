@@ -1,0 +1,7 @@
+Wheel — IV spike: {{ symbol }} ({{ as_of }})
+
+ATM IV {{ "%.1f" | format(baseline_iv * 100) }}% -> {{ "%.1f" | format(current_iv * 100) }}% ({{ "%+.1f" | format(pct_change * 100) }}%) | close {{ "%.2f" | format(close) }}
+{% if web_base_url %}
+
+Open: {{ web_base_url }}/tickers/{{ symbol }}
+{% endif %}

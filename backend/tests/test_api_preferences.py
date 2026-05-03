@@ -126,9 +126,11 @@ def test_put_updates_existing_row(client: TestClient) -> None:
     assert body["quiet_hours_start"] == "09:30"
 
     with get_session() as session:
-        rows = session.execute(
-            select(AlertPreference).where(AlertPreference.alert_type == "iv_spike")
-        ).scalars().all()
+        rows = (
+            session.execute(select(AlertPreference).where(AlertPreference.alert_type == "iv_spike"))
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
         assert rows[0].enabled is False
 
@@ -163,4 +165,4 @@ def test_put_invalid_quiet_hours_returns_422(client: TestClient) -> None:
 def test_channels_endpoint_reports_telegram_unconfigured(client: TestClient) -> None:
     response = client.get("/api/system/channels")
     assert response.status_code == 200
-    assert response.json() == {"telegram": False}
+    assert response.json() == {"telegram": False, "email": False, "ntfy": False}

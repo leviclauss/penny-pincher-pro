@@ -1,0 +1,32 @@
+# serializer version: 1
+# name: test_render_iv_spike_snapshot
+  dict({
+    'body': 'ATM IV 28.0% -> 36.0% (+28.6%) | close 172.40',
+    'subject': 'Wheel — IV spike: AAPL (2026-05-04)',
+  })
+# ---
+# name: test_render_morning_digest_snapshot
+  dict({
+    'body': '''
+      Macro: VIX 14.2 | term 0.92 | SPY above 200EMA
+      
+      Screener hits (1):
+        - AAPL — Conservative Wheel | close 172.40 | RSI 32 | IVp 67 | score 0.81 | earnings in 38d
+      Earnings today:
+        - MSFT (AMC)
+    ''',
+    'subject': 'Wheel — Morning digest 2026-05-02',
+  })
+# ---
+# name: test_render_position_management_snapshot
+  dict({
+    'body': '>=50% profit captured (52% of max) — consider closing.',
+    'subject': 'Wheel — Position alert: AAPL',
+  })
+# ---
+# name: test_render_setup_triggered_snapshot
+  dict({
+    'body': 'Conservative Wheel | close 172.40 | RSI 32 | IVp 67 | score 0.81',
+    'subject': 'Wheel — Setup triggered: AAPL (2026-05-04)',
+  })
+# ---

@@ -1,0 +1,26 @@
+Wheel — Morning digest {{ as_of }}
+
+Macro: VIX {{ "%.1f" | format(macro.vix) }} | term {{ "%.2f" | format(macro.term) }} | SPY {% if macro.spy_above_200ema %}above{% else %}below{% endif %} 200EMA
+
+{% if screener_hits %}
+Screener hits ({{ screener_hits | length }}):
+{% for hit in screener_hits %}
+  - {{ hit.symbol }} — {{ hit.config }} | close {{ "%.2f" | format(hit.close) }} | RSI {{ hit.rsi }} | IVp {{ hit.ivp }} | score {{ "%.2f" | format(hit.score) }} | earnings in {{ hit.next_earnings_days }}d{% if web_base_url %} | {{ web_base_url }}/tickers/{{ hit.symbol }}{% endif %}
+{% endfor %}
+{% else %}
+No screener hits today.
+{% endif %}
+{% if earnings_today %}
+
+Earnings today:
+{% for e in earnings_today %}
+  - {{ e.symbol }} ({{ e.when }}){% if web_base_url %} — {{ web_base_url }}/tickers/{{ e.symbol }}{% endif %}
+{% endfor %}
+{% endif %}
+{% if positions_attention %}
+
+Positions needing attention:
+{% for p in positions_attention %}
+  - {{ p.symbol }} — {{ p.note }}{% if web_base_url and p.position_id is defined %} — {{ web_base_url }}/positions/{{ p.position_id }}{% endif %}
+{% endfor %}
+{% endif %}

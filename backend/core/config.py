@@ -70,6 +70,24 @@ class Settings(BaseSettings):
     telegram_disable_preview: bool = True
     telegram_timeout_s: float = 10.0
 
+    # --- Email (SMTP) channel ---
+    smtp_host: str = Field(default="")
+    smtp_port: int = 587
+    smtp_user: str = Field(default="")
+    smtp_password: str = Field(default="")
+    smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False
+    smtp_from_address: str = Field(default="")
+    smtp_to_address: str = Field(default="")
+    smtp_timeout_s: float = 10.0
+
+    # --- ntfy.sh push channel ---
+    ntfy_server_url: str = "https://ntfy.sh"
+    ntfy_topic: str = Field(default="")
+    ntfy_token: str = Field(default="")
+    ntfy_priority: str = "default"
+    ntfy_timeout_s: float = 10.0
+
     # Base URL of the local web UI (e.g. Tailscale hostname). When set,
     # alert templates render "Open" deep links into the relevant pages.
     web_base_url: str = Field(default="")

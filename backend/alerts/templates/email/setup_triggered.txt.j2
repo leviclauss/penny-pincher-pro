@@ -1,0 +1,7 @@
+Wheel — Setup triggered: {{ symbol }} ({{ as_of }})
+
+{{ config }} | close {{ "%.2f" | format(close) }} | RSI {{ rsi }} | IVp {{ ivp }} | score {{ "%.2f" | format(score) }}
+{% if web_base_url %}
+
+Open: {{ web_base_url }}/tickers/{{ symbol }}
+{% endif %}

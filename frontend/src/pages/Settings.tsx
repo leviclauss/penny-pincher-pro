@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/Table";
 import { formatDateTime } from "@/lib/format";
 
-const KNOWN_CHANNELS = ["telegram"] as const;
+const KNOWN_CHANNELS = ["telegram", "email", "ntfy"] as const;
 
 function dirty(a: AlertPreference, b: AlertPreference): boolean {
   return (
@@ -302,6 +302,31 @@ function DataFreshnessCard(): JSX.Element {
   );
 }
 
+function ChannelStatusRow({
+  label,
+  configured,
+  envHint,
+}: {
+  label: string;
+  configured: boolean;
+  envHint: string;
+}): JSX.Element {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <span className="text-sm font-medium">{label}:</span>
+      {configured ? (
+        <Badge variant="success">configured</Badge>
+      ) : (
+        <Badge variant="warning">not configured</Badge>
+      )}
+      <span className="text-muted-foreground text-xs">
+        Set <code className="font-mono">{envHint}</code> in the backend env to
+        enable delivery.
+      </span>
+    </div>
+  );
+}
+
 function ChannelsCard(): JSX.Element {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["channels"],
@@ -321,17 +346,22 @@ function ChannelsCard(): JSX.Element {
             Failed to load channel status.
           </div>
         ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-sm font-medium">Telegram:</span>
-            {data.telegram ? (
-              <Badge variant="success">configured</Badge>
-            ) : (
-              <Badge variant="warning">not configured</Badge>
-            )}
-            <span className="text-muted-foreground text-xs">
-              Set <code className="font-mono">TELEGRAM_BOT_TOKEN</code> in the
-              backend env to enable delivery.
-            </span>
+          <div className="space-y-2">
+            <ChannelStatusRow
+              label="Telegram"
+              configured={data.telegram}
+              envHint="TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID"
+            />
+            <ChannelStatusRow
+              label="Email"
+              configured={data.email}
+              envHint="SMTP_HOST + SMTP_FROM_ADDRESS + SMTP_TO_ADDRESS"
+            />
+            <ChannelStatusRow
+              label="ntfy"
+              configured={data.ntfy}
+              envHint="NTFY_TOPIC (server defaults to https://ntfy.sh)"
+            />
           </div>
         )}
       </CardContent>

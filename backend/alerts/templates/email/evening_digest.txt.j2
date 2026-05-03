@@ -1,0 +1,26 @@
+Wheel — Evening digest {{ as_of }}
+
+Macro: VIX {{ "%.1f" | format(macro.vix) }} | term {{ "%.2f" | format(macro.term) }} | SPY {% if macro.spy_above_200ema %}above{% else %}below{% endif %} 200EMA
+
+{% if screener_hits %}
+Today's screener hits ({{ screener_hits | length }}):
+{% for hit in screener_hits %}
+  - {{ hit.symbol }} — {{ hit.config }} | close {{ "%.2f" | format(hit.close) }} | RSI {{ hit.rsi }} | IVp {{ hit.ivp }} | score {{ "%.2f" | format(hit.score) }} | earnings in {{ hit.next_earnings_days }}d{% if web_base_url %} | {{ web_base_url }}/tickers/{{ hit.symbol }}{% endif %}
+{% endfor %}
+{% else %}
+No screener hits today.
+{% endif %}
+{% if positions %}
+
+Open positions:
+{% for p in positions %}
+  - {{ p.symbol }} ({{ p.state }}) — P&L {{ "%.2f" | format(p.unrealized_pnl) }} | {{ "%.0f" | format(p.pct_max_profit * 100) }}% max | {{ p.dte }} DTE{% if web_base_url and p.position_id is defined %} | {{ web_base_url }}/positions/{{ p.position_id }}{% endif %}
+{% endfor %}
+{% endif %}
+{% if earnings_tomorrow %}
+
+Earnings tomorrow:
+{% for e in earnings_tomorrow %}
+  - {{ e.symbol }} ({{ e.when }}){% if web_base_url %} — {{ web_base_url }}/tickers/{{ e.symbol }}{% endif %}
+{% endfor %}
+{% endif %}
