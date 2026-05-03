@@ -1,0 +1,27 @@
+*Evening Digest* — {{ as_of | esc }}
+
+*Macro* — VIX {{ "%.1f" | format(macro.vix) | esc }} \| term {{ "%.2f" | format(macro.term) | esc }} \| SPY {% if macro.spy_above_200ema %}above{% else %}below{% endif %} 200EMA
+
+{% if screener_hits %}
+*Today's screener hits* \({{ screener_hits | length | esc }}\)
+{% for hit in screener_hits %}
+• *{{ hit.symbol | esc }}* — {{ hit.config | esc }} \| close {{ "%.2f" | format(hit.close) | esc }} \| RSI {{ hit.rsi | esc }} \| IVp {{ hit.ivp | esc }} \| score {{ "%.2f" | format(hit.score) | esc }} \| earnings in {{ hit.next_earnings_days | esc }}d
+{% endfor %}
+{% else %}
+_No screener hits today\._
+{% endif %}
+
+{% if positions %}
+
+*Open positions*
+{% for p in positions %}
+• {{ p.symbol | esc }} \({{ p.state | esc }}\) — P\&L {{ "%.2f" | format(p.unrealized_pnl) | esc }} \| {{ "%.0f" | format(p.pct_max_profit * 100) | esc }}% max \| {{ p.dte | esc }} DTE
+{% endfor %}
+{% endif %}
+{% if earnings_tomorrow %}
+
+*Earnings tomorrow*
+{% for e in earnings_tomorrow %}
+• {{ e.symbol | esc }} \({{ e.when | esc }}\)
+{% endfor %}
+{% endif %}

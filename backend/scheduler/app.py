@@ -28,6 +28,9 @@ from db import get_session
 from ingestion.alpaca_client import AlpacaClient, AlpacaDataError
 from ingestion.options import ChainSource
 from ingestion.options_client import AlpacaOptionsClient, AlpacaOptionsError
+from scheduler.jobs.digest import EVENING_JOB_NAME as EVENING_DIGEST_JOB_NAME
+from scheduler.jobs.digest import MORNING_JOB_NAME as MORNING_DIGEST_JOB_NAME
+from scheduler.jobs.digest import run_evening_digest, run_morning_digest
 from scheduler.jobs.evening import JOB_NAME as EVENING_JOB_NAME
 from scheduler.jobs.evening import run_evening_pipeline
 from scheduler.jobs.positions import JOB_NAME as POSITIONS_JOB_NAME
@@ -125,6 +128,18 @@ def create_and_start() -> BackgroundScheduler:
         settings.scheduler_positions_minute,
         settings.timezone,
     )
+    _register_morning_digest(
+        scheduler,
+        settings.scheduler_morning_digest_hour,
+        settings.scheduler_morning_digest_minute,
+        settings.timezone,
+    )
+    _register_evening_digest(
+        scheduler,
+        settings.scheduler_evening_digest_hour,
+        settings.scheduler_evening_digest_minute,
+        settings.timezone,
+    )
     scheduler.start()
     log.info(
         "scheduler.started",
@@ -135,6 +150,10 @@ def create_and_start() -> BackgroundScheduler:
         screener_minute=screener_minute,
         positions_hour=settings.scheduler_positions_hour,
         positions_minute=settings.scheduler_positions_minute,
+        morning_digest_hour=settings.scheduler_morning_digest_hour,
+        morning_digest_minute=settings.scheduler_morning_digest_minute,
+        evening_digest_hour=settings.scheduler_evening_digest_hour,
+        evening_digest_minute=settings.scheduler_evening_digest_minute,
     )
     return scheduler
 
@@ -239,6 +258,66 @@ def _register_positions(
 def _positions_entry() -> None:
     with get_session() as session:
         run_position_management(session)
+
+
+def _register_morning_digest(
+    scheduler: BackgroundScheduler, hour: int, minute: int, timezone: str
+) -> None:
+    cron = f"{minute} {hour} * * mon-fri"
+    schedule_human = f"Mon-Fri {hour:02d}:{minute:02d} {timezone}"
+    scheduler.add_job(
+        _morning_digest_entry,
+        trigger=CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute),
+        id=MORNING_DIGEST_JOB_NAME,
+        replace_existing=True,
+    )
+    register_job(
+        MORNING_DIGEST_JOB_NAME,
+        factory=lambda: _morning_digest_entry,
+        description=(
+            "Pre-open Telegram digest: macro, latest screener hits, today's earnings, positions."
+        ),
+        cron=cron,
+        timezone=timezone,
+        schedule_human=schedule_human,
+    )
+
+
+def _morning_digest_entry() -> None:
+    settings = get_settings()
+    calendar = settings.market_calendar or None
+    with get_session() as session:
+        run_morning_digest(session, market_calendar=calendar)
+
+
+def _register_evening_digest(
+    scheduler: BackgroundScheduler, hour: int, minute: int, timezone: str
+) -> None:
+    cron = f"{minute} {hour} * * mon-fri"
+    schedule_human = f"Mon-Fri {hour:02d}:{minute:02d} {timezone}"
+    scheduler.add_job(
+        _evening_digest_entry,
+        trigger=CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute),
+        id=EVENING_DIGEST_JOB_NAME,
+        replace_existing=True,
+    )
+    register_job(
+        EVENING_DIGEST_JOB_NAME,
+        factory=lambda: _evening_digest_entry,
+        description=(
+            "Post-close Telegram digest: today's screener hits, P&L summary, tomorrow's earnings."
+        ),
+        cron=cron,
+        timezone=timezone,
+        schedule_human=schedule_human,
+    )
+
+
+def _evening_digest_entry() -> None:
+    settings = get_settings()
+    calendar = settings.market_calendar or None
+    with get_session() as session:
+        run_evening_digest(session, market_calendar=calendar)
 
 
 def build_alpaca_client() -> AlpacaClient | None:

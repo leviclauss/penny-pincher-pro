@@ -34,12 +34,17 @@ migration, so unbuilt tracks already have their storage contract.
       `screener_pipeline` job runs after `evening_pipeline`. Read-only
       `/api/screener/configs` and `/api/screener/results` endpoints,
       plus a `/screener` UI page ranking candidates by score.
-- [ ] **03 — Alert engine.** `alerts/triggers/` and `alerts/channels/`
-      are stub `__init__.py` files — need trigger evaluation, dedup,
-      and channel adapters (email / push / webhook).
-- [ ] **04 — Position tracking.** `positions/` is empty — wheel
-      lifecycle (CSP → assignment → CC → called away), management
-      rules, snapshots into `position_snapshots`.
+- [x] **04 — Position tracking.** Wheel state machine (CSP →
+      assignment → CC → called away), daily `position_snapshots` pass,
+      management-rule evaluator (50% profit / 21 DTE / delta breach /
+      near-strike / CC ITM near expiry / stale), and a `position_management`
+      scheduler job that fans triggers through the alert dispatcher.
+- [~] **03 — Alert engine.** _Phase 1 — daily digests:_ Telegram
+      channel + dispatcher (with quiet hours and per-type preferences),
+      morning + evening digest builders, scheduled `morning_digest` /
+      `evening_digest` jobs with holiday + stale-data + dedup guards.
+      _Remaining:_ position-management triggers (Phase 2) and
+      intraday setup / IV-spike triggers (Phase 3).
 - [ ] **06 — Backtesting.** `backtest/` only has a `data/` stub —
       filter forward-return evaluation and full-wheel simulation
       using synthetic Black–Scholes pricing (per the point-in-time

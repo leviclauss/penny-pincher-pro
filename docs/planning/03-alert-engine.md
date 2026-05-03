@@ -2,6 +2,31 @@
 
 Turns screener results and intraday data into actionable notifications. Critical design constraint: **never spam yourself.** A noisy alert system gets muted; a muted alert system is useless.
 
+## Implementation status
+
+Phased delivery so each PR is independently useful:
+
+- **Phase 1 — Daily digests (shipped).** Morning + evening digest builders in
+  [`backend/alerts/triggers/digest.py`](../../backend/alerts/triggers/digest.py),
+  Telegram templates, and scheduled
+  [`morning_digest`](../../backend/scheduler/jobs/digest.py) /
+  [`evening_digest`](../../backend/scheduler/jobs/digest.py) jobs. Each job
+  short-circuits on NYSE holidays, when the latest bar is too stale (default
+  4-day tolerance to cover long weekends), and when an alert for the same
+  ``as_of`` date was already dispatched (dedup via ``payload_json.as_of``).
+- **Phase 2 — Position-management triggers (shipped as part of doc 04).**
+  The ``position_management`` scheduler job already evaluates the rules and
+  dispatches one alert per trigger. A future iteration will pull dedup into
+  the same shared helper used by digests.
+- **Phase 3 — Setup-triggered + IV-spike (not started).** Needs a polling
+  job during RTH and tighter dedup ("suppress if ticker already in this
+  morning's digest").
+
+The dispatcher (``alerts/dispatcher.py``), Telegram channel
+(``alerts/channels/telegram.py``), and template renderer
+(``alerts/templates/telegram_render.py``) are all in place and shared by
+every trigger family.
+
 ## Alert types
 
 ### Daily digest alerts (push at scheduled time)

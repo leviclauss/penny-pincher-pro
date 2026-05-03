@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     scheduler_screener_offset_minutes: int = 30
     scheduler_positions_hour: int = 18
     scheduler_positions_minute: int = 0
+    scheduler_morning_digest_hour: int = 8
+    scheduler_morning_digest_minute: int = 0
+    scheduler_evening_digest_hour: int = 18
+    scheduler_evening_digest_minute: int = 30
     market_calendar: str = "NYSE"
 
     telegram_bot_token: str = Field(default="")
