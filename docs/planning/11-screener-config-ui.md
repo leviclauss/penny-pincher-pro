@@ -144,16 +144,22 @@ unknown params, out-of-range param values, duplicate filter IDs,
 weights referencing absent or unscored filters, and the 409 on
 delete-with-results.
 
-### PR 3 — Frontend `/screener/configs` list page
+### PR 3 — Frontend `/screener/configs` list page *(this PR)*
 
-- New `pages/ScreenerConfigs.tsx` with a TanStack Query-backed table:
+- [x] New `pages/ScreenerConfigs.tsx` with a TanStack Query-backed table:
   name, description, # filters, active toggle, last updated, row
   actions (Edit, Duplicate, Delete).
-- Active toggle uses the PATCH endpoint with optimistic updates and
+- [x] Active toggle uses the PATCH endpoint with optimistic updates and
   rollback on error.
-- Delete is a confirm dialog; on 409 it offers "Deactivate instead?".
-- Sidebar link added; gear icon next to the dropdown on the existing
+- [x] Delete is a confirm dialog; on 409 it offers "Deactivate instead?".
+- [x] Sidebar link added; gear icon next to the dropdown on the existing
   Screener page links here.
+
+The Edit pencil links to `/screener/configs/{id}` which 404s until PR 4
+ships the editor. Duplicate fetches the source detail, suffixes the
+name with " (copy)", flips `is_active=false`, and POSTs. The
+`FilterConfigSummary` API response gained an `updated_at` field so the
+list can show "last updated" without an extra detail roundtrip.
 
 ### PR 4 — Frontend config editor
 

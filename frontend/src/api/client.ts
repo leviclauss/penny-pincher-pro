@@ -17,6 +17,7 @@ import type {
   PositionState,
   ScreenerConfigDetail,
   ScreenerConfigSummary,
+  ScreenerConfigWriteIn,
   ScreenerResultsResponse,
   TickerCreate,
   TickerPatch,
@@ -33,8 +34,20 @@ async function getJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+export class ApiError extends Error {
+  readonly status: number;
+  readonly detail: unknown;
+
+  constructor(status: number, detail: unknown, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
 async function mutateJson<T>(
-  method: "POST" | "PATCH" | "DELETE",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
   body?: unknown,
 ): Promise<T | null> {
@@ -44,15 +57,23 @@ async function mutateJson<T>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {
-    let detail = "";
+    let detail: unknown = null;
     try {
-      const data = (await response.json()) as { detail?: string };
-      detail = data?.detail ?? "";
+      const data = (await response.json()) as { detail?: unknown };
+      detail = data?.detail ?? null;
     } catch {
       // ignore parse failure
     }
-    throw new Error(
-      `request failed (${response.status}): ${method} ${path}${detail ? ` — ${detail}` : ""}`,
+    const detailText =
+      typeof detail === "string"
+        ? detail
+        : detail && typeof detail === "object" && "message" in detail
+          ? String((detail as { message: unknown }).message)
+          : "";
+    throw new ApiError(
+      response.status,
+      detail,
+      `request failed (${response.status}): ${method} ${path}${detailText ? ` — ${detailText}` : ""}`,
     );
   }
   if (response.status === 204) return null;
@@ -138,6 +159,43 @@ export function fetchScreenerConfigs(activeOnly = false): Promise<ScreenerConfig
 
 export function fetchScreenerConfig(configId: number): Promise<ScreenerConfigDetail> {
   return getJson<ScreenerConfigDetail>(`/api/screener/configs/${configId}`);
+}
+
+export function createScreenerConfig(
+  payload: ScreenerConfigWriteIn,
+): Promise<ScreenerConfigDetail> {
+  return mutateJson<ScreenerConfigDetail>("POST", "/api/screener/configs", payload).then(
+    (r) => r as ScreenerConfigDetail,
+  );
+}
+
+export function updateScreenerConfig(
+  configId: number,
+  payload: ScreenerConfigWriteIn,
+): Promise<ScreenerConfigDetail> {
+  return mutateJson<ScreenerConfigDetail>(
+    "PUT",
+    `/api/screener/configs/${configId}`,
+    payload,
+  ).then((r) => r as ScreenerConfigDetail);
+}
+
+export function patchScreenerConfigActive(
+  configId: number,
+  isActive: boolean,
+): Promise<ScreenerConfigDetail> {
+  return mutateJson<ScreenerConfigDetail>(
+    "PATCH",
+    `/api/screener/configs/${configId}/active`,
+    { is_active: isActive },
+  ).then((r) => r as ScreenerConfigDetail);
+}
+
+export function deleteScreenerConfig(configId: number, cascade = false): Promise<void> {
+  const qs = cascade ? "?cascade=true" : "";
+  return mutateJson<void>("DELETE", `/api/screener/configs/${configId}${qs}`).then(
+    () => undefined,
+  );
 }
 
 export interface ScreenerResultsParams {

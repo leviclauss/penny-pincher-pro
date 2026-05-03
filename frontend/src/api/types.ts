@@ -107,10 +107,25 @@ export interface ScreenerConfigSummary {
   description: string | null;
   is_active: boolean;
   filter_ids: string[];
+  updated_at: string;
 }
 
 export interface ScreenerConfigDetail extends ScreenerConfigSummary {
   config_json: Record<string, unknown>;
+}
+
+export interface ScreenerFilterEntryIn {
+  id: string;
+  params?: Record<string, unknown>;
+  required?: boolean;
+}
+
+export interface ScreenerConfigWriteIn {
+  name: string;
+  description?: string | null;
+  is_active?: boolean;
+  filters: ScreenerFilterEntryIn[];
+  scoring?: { weights?: Record<string, number> };
 }
 
 export interface ScreenerFilterEntry {
