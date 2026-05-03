@@ -69,8 +69,18 @@ backend/
     context.py      job_run() context manager
     jobs/
       evening.py    Post-close pipeline (bars → indicators → options → IV)
-  alerts/           Triggers + channel adapters (later session)
-  positions/        Wheel lifecycle + management rules (later session)
+      screener.py   Daily screener pass over the watchlist
+      positions.py  Daily snapshot + management-rule pass
+      digest.py     Morning + evening Telegram digest jobs
+  alerts/
+    dispatcher.py   Per-type fan-out + persistence (one row per fire)
+    channels/       base.py + telegram.py (HTTP-only Bot API adapter)
+    templates/      Jinja MarkdownV2 templates per alert_type + renderer
+    triggers/       Payload builders per family
+      digest.py     Morning + evening digest builders
+      _dedup.py     Shared "already dispatched for as_of" check
+      _freshness.py Stale-bar guard for trigger jobs
+  positions/        Wheel lifecycle + management rules
   backtest/         Filter forward-return + full strategy sim (later)
   alembic/          Migrations
   scripts/          One-off scripts (seed_dev.py, etc.)
@@ -187,6 +197,8 @@ Schema decisions worth knowing:
 | Backend dev server (with scheduler) | `make run-backend` |
 | Backend dev server (no scheduler) | `SCHEDULER_ENABLED=false make run-backend` |
 | Trigger a job manually | `curl -X POST http://localhost:8000/api/system/jobs/evening_pipeline/run` |
+| Trigger morning digest | `curl -X POST http://localhost:8000/api/system/jobs/morning_digest/run` |
+| Trigger evening digest | `curl -X POST http://localhost:8000/api/system/jobs/evening_digest/run` |
 | List recent job runs | `curl http://localhost:8000/api/system/job-runs` |
 | Frontend dev server | `make run-frontend` |
 | Update indicator snapshot | `cd backend && pytest tests/test_indicators.py --snapshot-update` |
@@ -302,6 +314,39 @@ in the DB are already point-in-time per row. Options snapshots are
 *current-only* — historical chains aren't stored, so backtests use
 synthetic Black-Scholes pricing (see
 [`docs/planning/06-backtesting.md`](docs/planning/06-backtesting.md)).
+
+## How to add an alert trigger
+
+Triggers are pure payload builders. The dispatcher
+(``alerts.dispatcher.dispatch``) handles channel fan-out, persistence, and
+quiet-hour gating — trigger code only decides *when* to fire and *what's
+in the payload*.
+
+1. **Pick the family** — daily summary (`triggers/digest.py`),
+   position-management (handled by `positions.management.fire_triggers`),
+   intraday setup detection (future `triggers/setup.py`), etc.
+2. **Build the payload as a dict** keyed exactly the way the matching
+   Jinja template expects. Always include an ``as_of`` ISO date string
+   when the trigger represents a per-day event — that's what the dedup
+   helper (`alerts.triggers._dedup.already_dispatched_for_as_of`) keys on.
+3. **Add a Telegram template** under
+   `backend/alerts/templates/telegram/<alert_type>.md.j2`. Run every
+   payload value through the `esc` filter — MarkdownV2 will silently
+   drop the message otherwise. Snapshot-test renders via syrupy
+   (see `tests/test_telegram_render.py`).
+4. **Wire a scheduler job** in `backend/scheduler/jobs/` that:
+   1. holiday-skips via `pandas_market_calendars`,
+   2. dedups via `already_dispatched_for_as_of`,
+   3. checks bar freshness via `alerts.triggers._freshness.check_bar_freshness`,
+   4. calls the builder + `dispatcher_module.dispatch`,
+   5. wraps everything in `scheduler.context.job_run()` so successes /
+      skips / failures all land in `job_runs`.
+5. **Register the job** in `scheduler/app.py` (`_register_*` + `register_job`)
+   so it gets a cron + shows up in the scheduled-jobs UI.
+6. **Tests:** unit tests for the builder against an in-memory SQLite DB
+   (alembic-migrated like `test_alerts_dispatcher.py`), plus an
+   end-to-end job test that asserts the holiday/stale/dedup branches
+   each write the right `job_runs` row.
 
 ## How to add a new ingested data source (platform track)
 
