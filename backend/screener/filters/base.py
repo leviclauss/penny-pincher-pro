@@ -16,12 +16,36 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, ClassVar, Protocol
+from typing import Any, ClassVar, Literal, Protocol, TypeAlias
 
 import pandas as pd
 
 from db.models.market import Ticker
 from ingestion.options_client import OptionSnapshotRecord
+
+FilterCategory: TypeAlias = Literal["trend", "volatility", "liquidity", "event"]
+ParamKind: TypeAlias = Literal["number", "integer", "percent", "currency", "tier_set"]
+
+
+@dataclass(frozen=True, slots=True)
+class ParamSpec:
+    """Machine-readable schema for one configurable filter parameter.
+
+    Drives the config-editor UI: ``kind`` picks the input control
+    (``percent`` is a fractional float displayed as %; ``currency`` is
+    USD; ``tier_set`` is a multi-select over allowed ticker tiers).
+    ``default`` mirrors the constant the filter actually consumes so UI
+    defaults can never drift from runtime defaults.
+    """
+
+    name: str
+    label: str
+    kind: ParamKind
+    default: float | int | tuple[int, ...]
+    min: float | None = None
+    max: float | None = None
+    step: float | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,9 +99,18 @@ class Filter(Protocol):
 
     Implementations are stateless classes with a class-level ``id`` matching
     the string used in ``filter_configs.config_json`` and ``FILTER_REGISTRY``.
+    The remaining class vars (``label``, ``description``, ``category``,
+    ``param_schema``, ``scored``) feed the catalog endpoint at
+    ``GET /api/screener/filters`` and the config-editor UI; see
+    ``docs/planning/11-screener-config-ui.md``.
     """
 
     id: ClassVar[str]
+    label: ClassVar[str]
+    description: ClassVar[str]
+    category: ClassVar[FilterCategory]
+    param_schema: ClassVar[tuple[ParamSpec, ...]]
+    scored: ClassVar[bool]
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult: ...
 

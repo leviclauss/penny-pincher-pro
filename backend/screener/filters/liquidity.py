@@ -17,7 +17,15 @@ from collections.abc import Mapping
 from typing import Any, ClassVar
 
 from ingestion.options_client import OptionSnapshotRecord
-from screener.filters.base import FilterContext, FilterResult, ineligible
+from screener.filters.base import (
+    FilterCategory,
+    FilterContext,
+    FilterResult,
+    ParamSpec,
+    ineligible,
+)
+
+CATEGORY: FilterCategory = "liquidity"
 
 OPTION_SPREAD_PCT_DEFAULT_MAX = 0.10
 OPTION_OI_MIN_DEFAULT = 500
@@ -39,6 +47,21 @@ class OptionSpreadPct:
     """
 
     id: ClassVar[str] = "option_spread_pct"
+    label: ClassVar[str] = "Median put spread"
+    description: ClassVar[str] = "Median (ask - bid) / mid across the put chain ≤ max."
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = False
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="max",
+            label="Max median spread",
+            kind="percent",
+            default=OPTION_SPREAD_PCT_DEFAULT_MAX,
+            min=0.0,
+            max=1.0,
+            step=0.01,
+        ),
+    )
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         max_spread = float(params.get("max", OPTION_SPREAD_PCT_DEFAULT_MAX))
@@ -70,6 +93,23 @@ class OptionOpenInterestMin:
     """
 
     id: ClassVar[str] = "option_oi_min"
+    label: ClassVar[str] = "Min open interest"
+    description: ClassVar[str] = (
+        "Max put-chain open interest ≥ min. Always ineligible on the "
+        "Alpaca free tier (open_interest is not populated)."
+    )
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = False
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="min",
+            label="Min open interest",
+            kind="integer",
+            default=OPTION_OI_MIN_DEFAULT,
+            min=0.0,
+            step=100.0,
+        ),
+    )
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         min_oi = int(params.get("min", OPTION_OI_MIN_DEFAULT))
@@ -92,6 +132,23 @@ class OptionVolumeMin:
     """
 
     id: ClassVar[str] = "option_volume_min"
+    label: ClassVar[str] = "Min option volume"
+    description: ClassVar[str] = (
+        "Max put-chain daily volume ≥ min. Always ineligible on the "
+        "Alpaca free tier (volume is not populated)."
+    )
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = False
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="min",
+            label="Min volume",
+            kind="integer",
+            default=OPTION_VOLUME_MIN_DEFAULT,
+            min=0.0,
+            step=50.0,
+        ),
+    )
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         min_vol = int(params.get("min", OPTION_VOLUME_MIN_DEFAULT))

@@ -1,7 +1,7 @@
-"""Screener resource — configs and per-day results.
+"""Screener resource — configs, filter catalog, and per-day results.
 
-Read-only for now. Config CRUD lands in a later session along with the UI
-form for tuning thresholds.
+Read endpoints today; config write endpoints land in PR2 of the
+config-UI plan (``docs/planning/11-screener-config-ui.md``).
 """
 
 from __future__ import annotations
@@ -18,8 +18,30 @@ from sqlalchemy.orm import Session
 from db import get_session
 from db.models.market import Earnings, IndicatorDaily, Ticker
 from db.models.screener import FilterConfig, ScreenerResult
+from screener.filters.base import Filter
+from screener.registry import FILTER_REGISTRY
 
 router = APIRouter(prefix="/api/screener", tags=["screener"])
+
+
+class FilterParamSchemaOut(BaseModel):
+    name: str
+    label: str
+    kind: str
+    default: float | int | list[int]
+    min: float | None = None
+    max: float | None = None
+    step: float | None = None
+    description: str | None = None
+
+
+class FilterCatalogEntry(BaseModel):
+    id: str
+    label: str
+    description: str
+    category: str
+    scored: bool
+    params: list[FilterParamSchemaOut]
 
 
 class FilterConfigSummary(BaseModel):
@@ -54,6 +76,19 @@ class ScreenerResultsResponse(BaseModel):
     config_id: int
     config_name: str
     rows: list[ScreenerResultRow]
+
+
+@router.get("/filters", response_model=list[FilterCatalogEntry])
+def list_filter_catalog() -> list[FilterCatalogEntry]:
+    """Filter catalog for the config-editor UI.
+
+    Returns one entry per registered filter, sorted by ID. The shape is
+    contractually frozen by ``docs/planning/11-screener-config-ui.md``.
+    """
+    return [
+        _catalog_entry(filter_id, FILTER_REGISTRY[filter_id])
+        for filter_id in sorted(FILTER_REGISTRY)
+    ]
 
 
 @router.get("/configs", response_model=list[FilterConfigSummary])
@@ -165,6 +200,29 @@ def symbol_history(
         # Indicator + earnings lookups are per-row but we only have one symbol;
         # fold them into a tiny per-row helper.
         return [_row_to_out(r, ticker, None, {}) for r in rows]
+
+
+def _catalog_entry(filter_id: str, cls: type[Filter]) -> FilterCatalogEntry:
+    return FilterCatalogEntry(
+        id=filter_id,
+        label=cls.label,
+        description=cls.description,
+        category=cls.category,
+        scored=cls.scored,
+        params=[
+            FilterParamSchemaOut(
+                name=spec.name,
+                label=spec.label,
+                kind=spec.kind,
+                default=list(spec.default) if isinstance(spec.default, tuple) else spec.default,
+                min=spec.min,
+                max=spec.max,
+                step=spec.step,
+                description=spec.description,
+            )
+            for spec in cls.param_schema
+        ],
+    )
 
 
 def _summary_from_config(config: FilterConfig) -> FilterConfigSummary:

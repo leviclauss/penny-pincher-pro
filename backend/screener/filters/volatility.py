@@ -13,7 +13,15 @@ from typing import Any, ClassVar
 
 import pandas as pd
 
-from screener.filters.base import FilterContext, FilterResult, ineligible
+from screener.filters.base import (
+    FilterCategory,
+    FilterContext,
+    FilterResult,
+    ParamSpec,
+    ineligible,
+)
+
+CATEGORY: FilterCategory = "volatility"
 
 IV_RANK_DEFAULT_MIN = 50.0
 IV_PERCENTILE_DEFAULT_MIN = 50.0
@@ -33,6 +41,23 @@ class IvRankHigh:
     """IV Rank ≥ ``min`` (rank is on a 0..100 scale)."""
 
     id: ClassVar[str] = "iv_rank_high"
+    label: ClassVar[str] = "IV Rank ≥ min"
+    description: ClassVar[str] = (
+        "IV Rank >= min on a 0..100 scale. Ineligible during the 126-day warmup."
+    )
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = True
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="min",
+            label="Min IV Rank",
+            kind="number",
+            default=IV_RANK_DEFAULT_MIN,
+            min=0.0,
+            max=100.0,
+            step=1.0,
+        ),
+    )
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         min_rank = float(params.get("min", IV_RANK_DEFAULT_MIN))
@@ -48,6 +73,23 @@ class IvPercentileHigh:
     """IV Percentile ≥ ``min`` (percentile is on a 0..100 scale)."""
 
     id: ClassVar[str] = "iv_percentile_high"
+    label: ClassVar[str] = "IV Percentile ≥ min"
+    description: ClassVar[str] = (
+        "IV Percentile >= min on a 0..100 scale. Ineligible during the 126-day warmup."
+    )
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = True
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="min",
+            label="Min IV Percentile",
+            kind="number",
+            default=IV_PERCENTILE_DEFAULT_MIN,
+            min=0.0,
+            max=100.0,
+            step=1.0,
+        ),
+    )
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         min_pct = float(params.get("min", IV_PERCENTILE_DEFAULT_MIN))
@@ -63,6 +105,20 @@ class IvAboveHv:
     """ATM IV / HV(20) ≥ ``min_ratio`` — premium-rich proxy."""
 
     id: ClassVar[str] = "iv_above_hv"
+    label: ClassVar[str] = "IV / HV ≥ min_ratio"
+    description: ClassVar[str] = "ATM IV divided by HV(20) ≥ min_ratio — premium-rich proxy."
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = False
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="min_ratio",
+            label="Min IV/HV ratio",
+            kind="number",
+            default=IV_ABOVE_HV_DEFAULT_RATIO,
+            min=0.0,
+            step=0.1,
+        ),
+    )
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         min_ratio = float(params.get("min_ratio", IV_ABOVE_HV_DEFAULT_RATIO))

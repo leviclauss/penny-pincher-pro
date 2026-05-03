@@ -13,7 +13,15 @@ from collections.abc import Mapping
 from datetime import timedelta
 from typing import Any, ClassVar
 
-from screener.filters.base import FilterContext, FilterResult, ineligible
+from screener.filters.base import (
+    FilterCategory,
+    FilterContext,
+    FilterResult,
+    ParamSpec,
+    ineligible,
+)
+
+CATEGORY: FilterCategory = "event"
 
 NO_EARNINGS_DEFAULT_DAYS = 45
 MIN_MARKET_CAP_DEFAULT_USD = 5_000_000_000.0
@@ -29,6 +37,23 @@ class NoEarningsInWindow:
     """
 
     id: ClassVar[str] = "no_earnings_in_window"
+    label: ClassVar[str] = "No earnings in window"
+    description: ClassVar[str] = (
+        "No earnings between as_of and as_of + days — avoid gap risk inside the option's lifetime."
+    )
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = False
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="days",
+            label="Look-ahead days",
+            kind="integer",
+            default=NO_EARNINGS_DEFAULT_DAYS,
+            min=0.0,
+            max=365.0,
+            step=1.0,
+        ),
+    )
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         days = int(params.get("days", NO_EARNINGS_DEFAULT_DAYS))
@@ -45,6 +70,20 @@ class MinMarketCap:
     """``ticker.market_cap`` ≥ ``min_usd``."""
 
     id: ClassVar[str] = "min_market_cap"
+    label: ClassVar[str] = "Min market cap"
+    description: ClassVar[str] = "ticker.market_cap ≥ min_usd."
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = False
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="min_usd",
+            label="Min market cap (USD)",
+            kind="currency",
+            default=MIN_MARKET_CAP_DEFAULT_USD,
+            min=0.0,
+            step=1_000_000_000.0,
+        ),
+    )
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         min_usd = float(params.get("min_usd", MIN_MARKET_CAP_DEFAULT_USD))
@@ -59,6 +98,18 @@ class TierAllowed:
     """``ticker.tier`` is in the allowed set."""
 
     id: ClassVar[str] = "tier_allowed"
+    label: ClassVar[str] = "Allowed tiers"
+    description: ClassVar[str] = "ticker.tier is in the allowed set."
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = False
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="tiers",
+            label="Allowed tiers",
+            kind="tier_set",
+            default=TIER_ALLOWED_DEFAULT,
+        ),
+    )
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         allowed_raw = params.get("tiers", TIER_ALLOWED_DEFAULT)

@@ -16,7 +16,15 @@ from typing import Any, ClassVar
 
 import pandas as pd
 
-from screener.filters.base import FilterContext, FilterResult, ineligible
+from screener.filters.base import (
+    FilterCategory,
+    FilterContext,
+    FilterResult,
+    ParamSpec,
+    ineligible,
+)
+
+CATEGORY: FilterCategory = "trend"
 
 NEAR_200EMA_DEFAULT_MAX_PCT = 0.03
 NEAR_50EMA_DEFAULT_MAX_PCT = 0.02
@@ -45,6 +53,21 @@ class Near200EMA:
     """Close within ``max_pct`` of the 200-day EMA (above or below)."""
 
     id: ClassVar[str] = "near_200ema"
+    label: ClassVar[str] = "Near 200 EMA"
+    description: ClassVar[str] = "Close within max_pct of the 200-day EMA (above or below)."
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = True
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="max_pct",
+            label="Max distance from 200 EMA",
+            kind="percent",
+            default=NEAR_200EMA_DEFAULT_MAX_PCT,
+            min=0.0,
+            max=0.5,
+            step=0.005,
+        ),
+    )
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         max_pct = float(params.get("max_pct", NEAR_200EMA_DEFAULT_MAX_PCT))
@@ -65,6 +88,21 @@ class Near50EMA:
     """Close within ``max_pct`` of the 50-day EMA."""
 
     id: ClassVar[str] = "near_50ema"
+    label: ClassVar[str] = "Near 50 EMA"
+    description: ClassVar[str] = "Close within max_pct of the 50-day EMA."
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = True
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="max_pct",
+            label="Max distance from 50 EMA",
+            kind="percent",
+            default=NEAR_50EMA_DEFAULT_MAX_PCT,
+            min=0.0,
+            max=0.5,
+            step=0.005,
+        ),
+    )
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         max_pct = float(params.get("max_pct", NEAR_50EMA_DEFAULT_MAX_PCT))
@@ -92,6 +130,14 @@ class WeeklyAbove200EMA:
     """
 
     id: ClassVar[str] = "weekly_above_200ema"
+    label: ClassVar[str] = "Weekly close > 200 EMA"
+    description: ClassVar[str] = (
+        "Regime filter: weekly close above the weekly EMA(200). Ineligible "
+        "during the ~200-week warmup."
+    )
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = False
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = ()
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         del params  # no configurable threshold; >/<= weekly EMA is the test
@@ -109,6 +155,21 @@ class RsiOversold:
     """Daily RSI(14) below ``max_rsi`` — mean-reversion entry signal."""
 
     id: ClassVar[str] = "rsi_oversold"
+    label: ClassVar[str] = "RSI oversold"
+    description: ClassVar[str] = "Daily RSI(14) below max_rsi — mean-reversion entry signal."
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = True
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="max_rsi",
+            label="Max RSI",
+            kind="number",
+            default=RSI_OVERSOLD_DEFAULT_MAX,
+            min=0.0,
+            max=100.0,
+            step=1.0,
+        ),
+    )
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         max_rsi = float(params.get("max_rsi", RSI_OVERSOLD_DEFAULT_MAX))
@@ -125,6 +186,13 @@ class BollingerLowerTouch:
     """Close at or below the lower Bollinger Band (mean-reversion entry)."""
 
     id: ClassVar[str] = "bb_lower_touch"
+    label: ClassVar[str] = "Bollinger lower touch"
+    description: ClassVar[str] = (
+        "Close at or below the lower Bollinger Band — mean-reversion entry."
+    )
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = False
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = ()
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         del params
@@ -140,6 +208,21 @@ class NotFreefall:
     """5-day return above ``min_5d_return`` (default -10%) — anti knife-catch."""
 
     id: ClassVar[str] = "not_freefall"
+    label: ClassVar[str] = "Not in freefall"
+    description: ClassVar[str] = "5-day return above min_5d_return — anti knife-catch."
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = False
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="min_5d_return",
+            label="Min 5-day return",
+            kind="percent",
+            default=NOT_FREEFALL_DEFAULT_MIN_5D_RETURN,
+            min=-1.0,
+            max=0.0,
+            step=0.01,
+        ),
+    )
 
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
         min_return = float(params.get("min_5d_return", NOT_FREEFALL_DEFAULT_MIN_5D_RETURN))
