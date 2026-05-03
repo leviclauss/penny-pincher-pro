@@ -9,6 +9,7 @@ import {
   ListChecks,
   Menu,
   Radar,
+  SlidersHorizontal,
   Sparkles,
   X,
 } from "lucide-react";
@@ -26,7 +27,8 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/tickers", label: "Tickers", icon: ListChecks },
-  { to: "/screener", label: "Screener", icon: Radar },
+  { to: "/screener", label: "Screener", icon: Radar, end: true },
+  { to: "/screener/configs", label: "Configs", icon: SlidersHorizontal },
   { to: "/positions", label: "Positions", icon: Briefcase },
   { to: "/jobs", label: "Jobs", icon: Clock },
 ];

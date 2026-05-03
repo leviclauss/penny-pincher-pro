@@ -9,7 +9,7 @@ the API enforcing the same constraints it does client-side.
 from __future__ import annotations
 
 from datetime import date as DateType
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response
@@ -62,6 +62,7 @@ class FilterConfigSummary(BaseModel):
     description: str | None
     is_active: bool
     filter_ids: list[str]
+    updated_at: datetime
 
 
 class FilterConfigDetail(FilterConfigSummary):
@@ -530,6 +531,7 @@ def _summary_from_config(config: FilterConfig) -> FilterConfigSummary:
         description=config.description,
         is_active=config.is_active,
         filter_ids=filter_ids,
+        updated_at=config.updated_at,
     )
 
 
