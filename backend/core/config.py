@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     scheduler_evening_hour: int = 17
     scheduler_evening_minute: int = 30
     scheduler_screener_offset_minutes: int = 30
+    scheduler_universe_scan_offset_minutes: int = 60
     scheduler_positions_hour: int = 18
     scheduler_positions_minute: int = 0
     scheduler_morning_digest_hour: int = 8

@@ -237,6 +237,7 @@ export interface ScreenerResultsParams {
   configId?: number | null;
   date?: string | null;
   passedOnly?: boolean;
+  tickerSource?: "watchlist" | "universe" | null;
   limit?: number;
 }
 
@@ -247,6 +248,7 @@ export function fetchScreenerResults(
   if (params.configId != null) qs.set("config_id", String(params.configId));
   if (params.date) qs.set("date", params.date);
   if (params.passedOnly !== undefined) qs.set("passed_only", String(params.passedOnly));
+  if (params.tickerSource) qs.set("ticker_source", params.tickerSource);
   if (params.limit !== undefined) qs.set("limit", String(params.limit));
   const suffix = qs.toString();
   return getJson<ScreenerResultsResponse>(

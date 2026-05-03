@@ -45,6 +45,8 @@ from scheduler.jobs.positions import JOB_NAME as POSITIONS_JOB_NAME
 from scheduler.jobs.positions import run_position_management
 from scheduler.jobs.screener import JOB_NAME as SCREENER_JOB_NAME
 from scheduler.jobs.screener import run_screener_job
+from scheduler.jobs.universe_scan import JOB_NAME as UNIVERSE_SCAN_JOB_NAME
+from scheduler.jobs.universe_scan import run_universe_scan_job
 
 log = get_logger(__name__)
 
@@ -135,6 +137,12 @@ def create_and_start() -> BackgroundScheduler:
         settings.scheduler_screener_offset_minutes,
     )
     _register_screener(scheduler, screener_hour, screener_minute, settings.timezone)
+    universe_hour, universe_minute = _add_minutes(
+        settings.scheduler_evening_hour,
+        settings.scheduler_evening_minute,
+        settings.scheduler_universe_scan_offset_minutes,
+    )
+    _register_universe_scan(scheduler, universe_hour, universe_minute, settings.timezone)
     _register_positions(
         scheduler,
         settings.scheduler_positions_hour,
@@ -175,6 +183,8 @@ def create_and_start() -> BackgroundScheduler:
         evening_minute=settings.scheduler_evening_minute,
         screener_hour=screener_hour,
         screener_minute=screener_minute,
+        universe_scan_hour=universe_hour,
+        universe_scan_minute=universe_minute,
         positions_hour=settings.scheduler_positions_hour,
         positions_minute=settings.scheduler_positions_minute,
         morning_digest_hour=settings.scheduler_morning_digest_hour,
@@ -303,6 +313,37 @@ def _screener_entry() -> None:
     calendar = settings.market_calendar or None
     with get_session() as session:
         run_screener_job(session, market_calendar=calendar)
+
+
+def _register_universe_scan(
+    scheduler: BackgroundScheduler, hour: int, minute: int, timezone: str
+) -> None:
+    cron = f"{minute} {hour} * * mon-fri"
+    schedule_human = f"Mon-Fri {hour:02d}:{minute:02d} {timezone}"
+    scheduler.add_job(
+        _universe_scan_entry,
+        trigger=CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute),
+        id=UNIVERSE_SCAN_JOB_NAME,
+        replace_existing=True,
+    )
+    register_job(
+        UNIVERSE_SCAN_JOB_NAME,
+        factory=lambda: _universe_scan_entry,
+        description=(
+            "Sync S&P 100 universe tickers, then run the screener against them "
+            "to surface option premium opportunities outside the watchlist."
+        ),
+        cron=cron,
+        timezone=timezone,
+        schedule_human=schedule_human,
+    )
+
+
+def _universe_scan_entry() -> None:
+    settings = get_settings()
+    calendar = settings.market_calendar or None
+    with get_session() as session:
+        run_universe_scan_job(session, market_calendar=calendar)
 
 
 def _register_positions(

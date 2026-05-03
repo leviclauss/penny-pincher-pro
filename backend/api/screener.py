@@ -21,6 +21,7 @@ from core.logging import get_logger
 from db import get_session
 from db.models.market import Earnings, IndicatorDaily, Ticker
 from db.models.screener import FilterConfig, ScreenerResult
+from ingestion.universe import get_universe_symbols
 from screener.filters.base import Filter, ParamSpec
 from screener.registry import FILTER_REGISTRY
 
@@ -76,11 +77,17 @@ class ScreenerResultRow(BaseModel):
     passed: bool
     score: float | None
     sector: str | None
+    ticker_source: str
     rsi_14: float | None
     iv_rank: float | None
     iv_percentile: float | None
     near_200ema_pct: float | None
     next_earnings_date: DateType | None
+    target_strike: float | None
+    target_expiration: DateType | None
+    target_premium: float | None
+    target_delta: float | None
+    annualized_return: float | None
     filter_results: dict[str, Any] | None
 
 
@@ -253,11 +260,19 @@ def list_results(
     config_id: int | None = Query(default=None),
     as_of: DateType | None = _DATE_QUERY,
     passed_only: bool = Query(default=True),
+    ticker_source: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> ScreenerResultsResponse:
     with get_session() as session:
         config = _resolve_config(session, config_id)
-        target_date = as_of or _latest_date_for(session, config.id)
+        # Determine which symbol set to scope to when ticker_source is given.
+        source_symbols: list[str] | None = None
+        if ticker_source == "universe":
+            source_symbols = get_universe_symbols(session)
+        elif ticker_source == "watchlist":
+            source_symbols = _watchlist_symbols(session)
+
+        target_date = as_of or _latest_date_for(session, config.id, source_symbols)
         if target_date is None:
             return ScreenerResultsResponse(
                 date=as_of or DateType.today(),
@@ -272,11 +287,17 @@ def list_results(
                 ScreenerResult.config_id == config.id,
                 ScreenerResult.date == target_date,
             )
-            .order_by(desc(ScreenerResult.score), ScreenerResult.symbol)
+            .order_by(
+                desc(ScreenerResult.annualized_return),
+                desc(ScreenerResult.score),
+                ScreenerResult.symbol,
+            )
             .limit(limit)
         )
         if passed_only:
             stmt = stmt.where(ScreenerResult.passed.is_(True))
+        if source_symbols is not None:
+            stmt = stmt.where(ScreenerResult.symbol.in_(source_symbols))
         rows = session.execute(stmt).scalars().all()
         if not rows:
             return ScreenerResultsResponse(
@@ -552,11 +573,25 @@ def _resolve_config(session: Session, config_id: int | None) -> FilterConfig:
     return config
 
 
-def _latest_date_for(session: Session, config_id: int) -> DateType | None:
-    result: DateType | None = session.execute(
-        select(func.max(ScreenerResult.date)).where(ScreenerResult.config_id == config_id)
-    ).scalar_one_or_none()
+def _latest_date_for(
+    session: Session,
+    config_id: int,
+    symbol_scope: list[str] | None = None,
+) -> DateType | None:
+    stmt = select(func.max(ScreenerResult.date)).where(ScreenerResult.config_id == config_id)
+    if symbol_scope is not None:
+        stmt = stmt.where(ScreenerResult.symbol.in_(symbol_scope))
+    result: DateType | None = session.execute(stmt).scalar_one_or_none()
     return result
+
+
+def _watchlist_symbols(session: Session) -> list[str]:
+    rows = session.execute(
+        select(Ticker.symbol)
+        .where(Ticker.ticker_source == "watchlist", Ticker.is_active.is_(True))
+        .order_by(Ticker.symbol)
+    ).scalars()
+    return list(rows)
 
 
 def _tickers_by_symbol(session: Session, symbols: list[str]) -> dict[str, Ticker]:
@@ -612,11 +647,17 @@ def _row_to_out(
         passed=row.passed,
         score=row.score,
         sector=ticker.sector if ticker else None,
+        ticker_source=ticker.ticker_source if ticker else "watchlist",
         rsi_14=indicator.rsi_14 if indicator else None,
         iv_rank=indicator.iv_rank if indicator else None,
         iv_percentile=indicator.iv_percentile if indicator else None,
         near_200ema_pct=near_200ema_pct,
         next_earnings_date=next_earnings.get(row.symbol),
+        target_strike=row.target_strike,
+        target_expiration=row.target_expiration,
+        target_premium=row.target_premium,
+        target_delta=row.target_delta,
+        annualized_return=row.annualized_return,
         filter_results=row.filter_results_json,
     )
 
