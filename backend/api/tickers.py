@@ -50,6 +50,7 @@ class TickerSummary(BaseModel):
     market_cap: float | None
     is_active: bool
     is_hidden: bool
+    ticker_source: str
     last_close: float | None
     last_close_date: date | None
     ema_200: float | None
@@ -105,6 +106,7 @@ def _summary_from_row(
         market_cap=t.market_cap,
         is_active=t.is_active,
         is_hidden=t.is_hidden,
+        ticker_source=t.ticker_source,
         last_close=bar.close if bar else None,
         last_close_date=bar.date if bar else None,
         ema_200=ind.ema_200 if ind else None,
@@ -199,8 +201,26 @@ def create_ticker(
         raise HTTPException(status_code=422, detail=f"invalid symbol: {sym}")
 
     with get_session() as session:
-        if session.get(Ticker, sym) is not None:
-            raise HTTPException(status_code=409, detail=f"ticker exists: {sym}")
+        existing = session.get(Ticker, sym)
+        if existing is not None:
+            if existing.ticker_source == "watchlist":
+                raise HTTPException(status_code=409, detail=f"ticker exists: {sym}")
+            # Promote universe ticker to watchlist: make it visible and user-managed.
+            existing.ticker_source = "watchlist"
+            existing.is_hidden = False
+            if payload.tier is not None:
+                existing.tier = payload.tier
+            if payload.name:
+                existing.name = payload.name
+            if payload.notes is not None:
+                existing.notes = payload.notes
+            existing.updated_at = utcnow()
+            session.commit()
+            session.refresh(existing)
+            summary = _summary_from_row(existing, None, None, None)
+            log.info("tickers.promote_from_universe", symbol=sym)
+            return summary
+
         now = utcnow()
         ticker = Ticker(
             symbol=sym,
@@ -209,6 +229,7 @@ def create_ticker(
             notes=payload.notes,
             is_active=True,
             is_hidden=False,
+            ticker_source="watchlist",
             added_at=now,
             updated_at=now,
         )

@@ -15,6 +15,7 @@ export interface TickerSummary {
   market_cap: number | null;
   is_active: boolean;
   is_hidden: boolean;
+  ticker_source: "watchlist" | "universe";
   last_close: number | null;
   last_close_date: string | null;
   ema_200: number | null;
@@ -189,11 +190,17 @@ export interface ScreenerResultRow {
   passed: boolean;
   score: number | null;
   sector: string | null;
+  ticker_source: string;
   rsi_14: number | null;
   iv_rank: number | null;
   iv_percentile: number | null;
   near_200ema_pct: number | null;
   next_earnings_date: string | null;
+  target_strike: number | null;
+  target_expiration: string | null;
+  target_premium: number | null;
+  target_delta: number | null;
+  annualized_return: number | null;
   filter_results: Record<string, ScreenerFilterEntry> | null;
 }
 

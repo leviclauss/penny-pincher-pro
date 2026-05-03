@@ -14,6 +14,7 @@ import {
   Settings as SettingsIcon,
   SlidersHorizontal,
   Sparkles,
+  Telescope,
   X,
 } from "lucide-react";
 import { fetchHealth } from "@/api/client";
@@ -32,6 +33,7 @@ const NAV: NavItem[] = [
   { to: "/tickers", label: "Tickers", icon: ListChecks },
   { to: "/screener", label: "Screener", icon: Radar, end: true },
   { to: "/screener/configs", label: "Configs", icon: SlidersHorizontal },
+  { to: "/discovery", label: "Discovery", icon: Telescope },
   { to: "/positions", label: "Positions", icon: Briefcase },
   { to: "/backtest", label: "Backtest", icon: FlaskConical },
   { to: "/alerts", label: "Alerts", icon: Bell },

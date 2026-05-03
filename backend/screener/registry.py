@@ -10,7 +10,7 @@ cross-symbol and will land as a ``Postprocessor`` in PR3, not as a ``Filter``.
 
 from __future__ import annotations
 
-from screener.filters import event, liquidity, technical, volatility
+from screener.filters import economics, event, liquidity, technical, volatility
 from screener.filters.base import Filter
 
 FILTER_REGISTRY: dict[str, type[Filter]] = {
@@ -33,6 +33,8 @@ FILTER_REGISTRY: dict[str, type[Filter]] = {
     event.NoEarningsInWindow.id: event.NoEarningsInWindow,
     event.MinMarketCap.id: event.MinMarketCap,
     event.TierAllowed.id: event.TierAllowed,
+    # Tier 5 — Wheel Economics
+    economics.PremiumEconomics.id: economics.PremiumEconomics,
 }
 
 

@@ -3,6 +3,7 @@ import { AppShell } from "@/components/AppShell";
 import { Alerts } from "@/pages/Alerts";
 import { Backtest } from "@/pages/Backtest";
 import { Dashboard } from "@/pages/Dashboard";
+import { Discovery } from "@/pages/Discovery";
 import { Jobs } from "@/pages/Jobs";
 import { NotFound } from "@/pages/NotFound";
 import { PositionDetail } from "@/pages/PositionDetail";
@@ -26,6 +27,7 @@ export function App(): JSX.Element {
           <Route path="screener/configs" element={<ScreenerConfigs />} />
           <Route path="screener/configs/new" element={<ScreenerConfigEditor />} />
           <Route path="screener/configs/:id" element={<ScreenerConfigEditor />} />
+          <Route path="discovery" element={<Discovery />} />
           <Route path="positions" element={<Positions />} />
           <Route path="positions/:id" element={<PositionDetail />} />
           <Route path="alerts" element={<Alerts />} />

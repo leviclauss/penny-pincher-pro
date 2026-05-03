@@ -90,7 +90,7 @@ class FilterResult:
     passed: bool
     eligible: bool = True
     score: float | None = None
-    value: float | str | None = None
+    value: float | str | dict[str, Any] | None = None
     reason: str | None = None
 
 
@@ -115,7 +115,7 @@ class Filter(Protocol):
     def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult: ...
 
 
-def ineligible(reason: str, value: float | str | None = None) -> FilterResult:
+def ineligible(reason: str, value: float | str | dict[str, Any] | None = None) -> FilterResult:
     """Shorthand for the 'cannot evaluate' branch.
 
     Returns ``passed=False, eligible=False`` so a required filter

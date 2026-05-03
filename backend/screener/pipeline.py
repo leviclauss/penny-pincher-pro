@@ -313,6 +313,33 @@ def _apply_sector_concentration(
     return dropped
 
 
+def _evaluation_to_row(
+    as_of: date,
+    config_id: int,
+    e: _SymbolEvaluation,
+) -> dict[str, Any]:
+    econ = e.filter_results.get("premium_economics")
+    econ_value = econ.get("value") if econ else None
+    econ_dict = econ_value if isinstance(econ_value, dict) else None
+    return {
+        "date": as_of,
+        "symbol": e.symbol,
+        "config_id": config_id,
+        "passed": e.passed,
+        "score": e.score,
+        "filter_results_json": e.filter_results,
+        "target_strike": econ_dict.get("strike") if econ_dict else None,
+        "target_expiration": (
+            date.fromisoformat(econ_dict["expiration"])
+            if econ_dict and isinstance(econ_dict.get("expiration"), str)
+            else None
+        ),
+        "target_premium": econ_dict.get("premium") if econ_dict else None,
+        "target_delta": econ_dict.get("delta") if econ_dict else None,
+        "annualized_return": econ_dict.get("annualized_return") if econ_dict else None,
+    }
+
+
 def _persist_evaluations(
     session: Session,
     as_of: date,
@@ -323,20 +350,7 @@ def _persist_evaluations(
         return 0
 
     rows: list[dict[str, Any]] = [
-        {
-            "date": as_of,
-            "symbol": e.symbol,
-            "config_id": config_id,
-            "passed": e.passed,
-            "score": e.score,
-            "filter_results_json": e.filter_results,
-            "target_strike": None,
-            "target_expiration": None,
-            "target_premium": None,
-            "target_delta": None,
-            "annualized_return": None,
-        }
-        for e in evaluations
+        _evaluation_to_row(as_of, config_id, e) for e in evaluations
     ]
 
     update_cols = (
@@ -359,9 +373,14 @@ def _persist_evaluations(
 
 
 def _load_tickers(session: Session, symbols: Sequence[str] | None) -> list[Ticker]:
-    stmt = select(Ticker).where(Ticker.is_active.is_(True), Ticker.is_hidden.is_(False))
+    stmt = select(Ticker).where(Ticker.is_active.is_(True))
     if symbols is not None:
+        # Caller supplied explicit symbols — trust the list regardless of is_hidden
+        # (used by the universe scan job to include hidden universe tickers).
         symbol_set = {s.upper() for s in symbols}
         stmt = stmt.where(Ticker.symbol.in_(symbol_set))
+    else:
+        # Default: watchlist mode — only non-hidden tickers.
+        stmt = stmt.where(Ticker.is_hidden.is_(False))
     rows = session.execute(stmt.order_by(Ticker.symbol)).scalars().all()
     return cast(list[Ticker], list(rows))

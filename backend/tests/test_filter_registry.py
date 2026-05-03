@@ -32,6 +32,8 @@ EXPECTED_FILTER_IDS = {
     "no_earnings_in_window",
     "min_market_cap",
     "tier_allowed",
+    # Tier 5 — Wheel Economics
+    "premium_economics",
 }
 
 
