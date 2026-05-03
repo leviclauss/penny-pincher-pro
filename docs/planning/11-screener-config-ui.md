@@ -121,20 +121,27 @@ render forms without hardcoding filter IDs.
 
 Not in scope for PR 1: any write endpoints, any frontend changes.
 
-### PR 2 — Config write endpoints
+### PR 2 — Config write endpoints *(this PR)*
 
-- `POST /api/screener/configs` — create. Validates filter IDs,
+- [x] `POST /api/screener/configs` — create. Validates filter IDs,
   param presence/types against `PARAM_SCHEMA`, and that
-  `scoring.weights` only references filters present in `filters[]`.
-- `PUT /api/screener/configs/{id}` — full replace; bumps `updated_at`.
-- `DELETE /api/screener/configs/{id}` — 409 if `screener_results`
+  `scoring.weights` only references scored filters present in `filters[]`.
+- [x] `PUT /api/screener/configs/{id}` — full replace; `updated_at`
+  is bumped automatically by the model's `onupdate=utcnow`.
+- [x] `DELETE /api/screener/configs/{id}` — 409 if `screener_results`
   rows reference it; suggest deactivation instead. `?cascade=true`
   forces hard delete (admin escape hatch).
-- `PATCH /api/screener/configs/{id}/active` — toggle `is_active`
+- [x] `PATCH /api/screener/configs/{id}/active` — toggle `is_active`
   without round-tripping the whole JSON.
 
+`sector_concentration` is allowed inside `filters[]` as a special-case
+postprocessor (the pipeline already understands it) but is rejected
+from `scoring.weights` because it's not a scored filter. The full
+postprocessor catalog is still parked under "Open questions".
+
 Tests cover the happy path plus rejection of unknown filter IDs,
-unknown params, weights referencing absent filters, and the 409 on
+unknown params, out-of-range param values, duplicate filter IDs,
+weights referencing absent or unscored filters, and the 409 on
 delete-with-results.
 
 ### PR 3 — Frontend `/screener/configs` list page
