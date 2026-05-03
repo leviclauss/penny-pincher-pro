@@ -24,7 +24,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from alerts.channels.base import ChannelResult
+from alerts.channels.base import Channel, ChannelResult
 from alerts.templates.ntfy_render import render
 from core.config import get_settings
 from core.logging import get_logger
@@ -41,7 +41,7 @@ class _RetryableStatus(Exception):
     """Raised on transient HTTP status codes (5xx / 429) to drive tenacity."""
 
 
-class NtfyChannel:
+class NtfyChannel(Channel):
     id = "ntfy"
 
     def __init__(self, client: httpx.Client | None = None) -> None:
@@ -57,7 +57,7 @@ class NtfyChannel:
     def configured(self) -> bool:
         return bool(self._server_url and self._topic)
 
-    def send(self, alert_type: str, payload: dict[str, Any]) -> ChannelResult:
+    def send(self, alert_type: str, payload: dict[str, Any], *, alert_id: int | None = None) -> ChannelResult:
         if not self.configured:
             log.warning("ntfy.skip.unconfigured", alert_type=alert_type)
             return ChannelResult(False, None, "ntfy_not_configured")

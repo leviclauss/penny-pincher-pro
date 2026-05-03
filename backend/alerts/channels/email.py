@@ -21,7 +21,7 @@ import smtplib
 from email.message import EmailMessage as MIMEEmailMessage
 from typing import Any
 
-from alerts.channels.base import ChannelResult
+from alerts.channels.base import Channel, ChannelResult
 from alerts.templates.email_render import render
 from core.config import get_settings
 from core.logging import get_logger
@@ -29,7 +29,7 @@ from core.logging import get_logger
 log = get_logger(__name__)
 
 
-class EmailChannel:
+class EmailChannel(Channel):
     id = "email"
 
     def __init__(self) -> None:
@@ -49,7 +49,7 @@ class EmailChannel:
     def configured(self) -> bool:
         return bool(self._host and self._from_address and self._to_address)
 
-    def send(self, alert_type: str, payload: dict[str, Any]) -> ChannelResult:
+    def send(self, alert_type: str, payload: dict[str, Any], *, alert_id: int | None = None) -> ChannelResult:
         if not self.configured:
             log.warning("email.skip.unconfigured", alert_type=alert_type)
             return ChannelResult(False, None, "email_not_configured")

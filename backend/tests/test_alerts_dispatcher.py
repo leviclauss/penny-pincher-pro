@@ -279,10 +279,10 @@ def test_dispatch_swallows_channel_exception(db: None) -> None:
             )
         )
 
-    class ExplodingChannel:
+    class ExplodingChannel(Channel):
         id = "explody"
 
-        def send(self, alert_type: str, payload: dict[str, Any]) -> ChannelResult:
+        def send(self, alert_type: str, payload: dict[str, Any], *, alert_id: int | None = None) -> ChannelResult:
             raise RuntimeError("kaboom")
 
     ntfy = FakeChannel("ntfy")
