@@ -160,26 +160,50 @@ def _prune_old_backups(backup_dir: Path, *, keep: int) -> list[Path]:
 def upload_offsite(target: Path, settings: Settings) -> str:
     """Upload ``target`` to the configured off-site provider.
 
+    Both ``s3`` and ``b2`` go through ``boto3.client("s3")`` — Backblaze B2
+    speaks the S3 protocol when given its S3-compatible endpoint URL.
     Returns a short status string recorded in the job_runs metrics.
 
-    Currently a stub. Wire-up note: implement the matching branch below
-    (``s3`` / ``b2``) by POSTing the bytes to a presigned URL pre-issued
-    out of band — keeps the runtime free of boto3. For interactive auth,
-    swap in ``boto3`` and replace this body with a single
-    ``boto3.client('s3').upload_file(str(target), bucket, key)`` call.
+    Requires the ``backup-s3`` optional extra (``pip install -e .[backup-s3]``).
     """
     provider = (settings.backup_offsite_provider or "").lower()
     if provider in {"", "none"}:
         return "disabled"
     if provider not in {"s3", "b2"}:
         raise ValueError(f"unsupported off-site provider: {provider!r}")
+    if not settings.backup_offsite_bucket:
+        raise ValueError("backup_offsite_bucket must be set when off-site upload is enabled")
+    # B2's S3 API is per-region; insisting on an endpoint URL avoids the
+    # foot-gun of accidentally hitting AWS with B2 credentials.
+    if provider == "b2" and not settings.backup_offsite_endpoint_url:
+        raise ValueError("backup_offsite_endpoint_url is required for provider='b2'")
 
-    # TODO(ops): implement presigned-PUT upload via httpx, e.g.
-    #     httpx.put(presigned_url, content=target.read_bytes()).raise_for_status()
-    # using a URL minted out of band (avoids a boto3 dependency at runtime).
-    # Until then, advertise the stub clearly so a misconfigured production
-    # job doesn't silently believe it's shipping bytes off-box.
-    raise NotImplementedError(
-        f"off-site upload for provider={provider!r} is not yet wired; "
-        "see scheduler.jobs.backup.upload_offsite for the one-line wiring note"
+    try:
+        import boto3  # noqa: PLC0415
+    except ImportError as exc:
+        raise RuntimeError(
+            "off-site backup requires the 'backup-s3' extra; "
+            "install with `pip install -e .[backup-s3]`"
+        ) from exc
+
+    client_kwargs: dict[str, str] = {}
+    if settings.backup_offsite_endpoint_url:
+        client_kwargs["endpoint_url"] = settings.backup_offsite_endpoint_url
+    if settings.backup_offsite_region:
+        client_kwargs["region_name"] = settings.backup_offsite_region
+    if settings.backup_offsite_access_key_id:
+        client_kwargs["aws_access_key_id"] = settings.backup_offsite_access_key_id
+    if settings.backup_offsite_secret_access_key:
+        client_kwargs["aws_secret_access_key"] = settings.backup_offsite_secret_access_key
+
+    client = boto3.client("s3", **client_kwargs)
+    prefix = (settings.backup_offsite_prefix or "").strip("/")
+    key = f"{prefix}/{target.name}" if prefix else target.name
+    client.upload_file(str(target), settings.backup_offsite_bucket, key)
+    log.info(
+        "sqlite_backup.offsite_uploaded",
+        provider=provider,
+        bucket=settings.backup_offsite_bucket,
+        key=key,
     )
+    return "uploaded"

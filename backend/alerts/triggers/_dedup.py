@@ -84,6 +84,27 @@ def already_dispatched_for_symbol_on(
     return session.execute(stmt.limit(1)).scalar_one_or_none() is not None
 
 
+def already_dispatched_for_job_today(
+    session: Session,
+    *,
+    job_name: str,
+    today: date,
+    alert_type: str = "job_failed",
+) -> bool:
+    """True if a ``job_failed`` alert already fired for ``job_name`` on ``today``.
+
+    Limits failure alerts to one per (job_name, day) so a transient outage
+    that fails the same scheduled job repeatedly through the day doesn't
+    generate a Telegram fire-hose. The dedup window resets at midnight UTC.
+    """
+    stmt = select(Alert.id).where(
+        Alert.alert_type == alert_type,
+        Alert.payload_json["job_name"].as_string() == job_name,
+        Alert.payload_json["as_of"].as_string() == today.isoformat(),
+    )
+    return session.execute(stmt.limit(1)).scalar_one_or_none() is not None
+
+
 def symbol_in_morning_digest(
     session: Session,
     *,

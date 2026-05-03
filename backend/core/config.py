@@ -123,12 +123,26 @@ class Settings(BaseSettings):
     scheduler_backup_hour: int = 3
     scheduler_backup_minute: int = 0
     # Off-site upload — disabled by default. Provider is one of "s3" or "b2"
-    # (see scheduler.jobs.backup.upload_offsite for the current stub +
-    # wiring note).
+    # (both go through the boto3 S3 client; B2 just needs its S3-compatible
+    # endpoint URL set). Requires the optional ``backup-s3`` extra:
+    # ``pip install -e .[backup-s3]``.
     backup_offsite_enabled: bool = False
     backup_offsite_provider: str = Field(default="")
     backup_offsite_bucket: str = Field(default="")
     backup_offsite_prefix: str = Field(default="")
+    # Custom endpoint (required for B2, optional for AWS). For Backblaze the
+    # value looks like https://s3.us-west-002.backblazeb2.com.
+    backup_offsite_endpoint_url: str = Field(default="")
+    backup_offsite_region: str = Field(default="")
+    backup_offsite_access_key_id: str = Field(default="")
+    backup_offsite_secret_access_key: str = Field(default="")
+
+    # --- Healthchecks.io heartbeat ---
+    # Per-job ping URL is read from env var HEALTHCHECKS_URL_<JOB_NAME> (see
+    # core.healthchecks). This master switch turns the whole feature off
+    # without unsetting individual env vars.
+    healthchecks_enabled: bool = True
+    healthchecks_timeout_s: float = 5.0
 
 
 @lru_cache(maxsize=1)
