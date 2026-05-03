@@ -180,6 +180,26 @@ Schema decisions worth knowing:
 
 ## Common tasks
 
+### Docker (recommended — works on Mac, Windows, Linux)
+
+| Task | Command |
+|---|---|
+| Start everything | `make dev` (or `docker compose up`) |
+| Rebuild backend image | `make docker-build` |
+| Run tests | `make docker-test` |
+| Lint | `make docker-lint` |
+| Format | `make docker-format` |
+| Typecheck | `make docker-typecheck` |
+| Open a shell | `make docker-shell` |
+| Apply migrations | `make docker-migrate` |
+| Full ingestion | `make docker-ingest-full` |
+| Daily ingestion | `make docker-ingest-incremental` |
+| Seed dev watchlist | `docker compose exec backend python -m scripts.seed_dev` |
+| Forward-return eval | `docker compose exec backend python -m backtest --config-id 1 --start 2024-01-01 --end 2025-12-31` |
+| Stop | `make docker-down` |
+
+### Local (Mac / Linux with Python 3.11+ and Node 20+)
+
 | Task | Command |
 |---|---|
 | Install everything | `make install` |
@@ -198,16 +218,34 @@ Schema decisions worth knowing:
 | Skip everything but bars | `python -m ingestion.pipeline --incremental --skip-options --skip-earnings --skip-macro` |
 | Backend dev server (with scheduler) | `make run-backend` |
 | Backend dev server (no scheduler) | `SCHEDULER_ENABLED=false make run-backend` |
+| Forward-return eval | `cd backend && python -m backtest --config-id 1 --start 2024-01-01 --end 2025-12-31` |
 | Trigger a job manually | `curl -X POST http://localhost:8000/api/system/jobs/evening_pipeline/run` |
 | Trigger morning digest | `curl -X POST http://localhost:8000/api/system/jobs/morning_digest/run` |
 | Trigger evening digest | `curl -X POST http://localhost:8000/api/system/jobs/evening_digest/run` |
 | Trigger one intraday tick (only registered when `SCHEDULER_INTRADAY_ENABLED=true`) | `curl -X POST http://localhost:8000/api/system/jobs/intraday_pulse/run` |
 | List recent job runs | `curl http://localhost:8000/api/system/job-runs` |
+| Data freshness check | `curl http://localhost:8000/api/system/data-freshness` |
 | Frontend dev server | `make run-frontend` |
 | Update indicator snapshot | `cd backend && pytest tests/test_indicators.py --snapshot-update` |
 | Run a filter backtest | `cd backend && python -m backtest.cli --config-id N --start YYYY-MM-DD --end YYYY-MM-DD` |
 
+> **Windows users:** Use the Docker workflow. The `py_vollib` dependency
+> requires CPython internals (`_testcapi`) that aren't available in the
+> Windows Store Python distribution. Docker sidesteps this entirely.
+
 A typical first run from a clean clone:
+
+**Docker (any OS):**
+
+```bash
+cp .env.example .env       # add Alpaca keys
+make dev                   # builds + starts backend + frontend
+# In another terminal:
+docker compose exec backend python -m scripts.seed_dev
+make docker-ingest-full    # ~5 years of bars + indicators
+```
+
+**Local (Mac / Linux):**
 
 ```bash
 cp .env.example .env       # add Alpaca keys
@@ -226,6 +264,7 @@ file per resource under `backend/api/`:
 | Route | Source | Notes |
 |---|---|---|
 | `GET /api/system/health` | `api/main.py` | last bar date, bar count |
+| `GET /api/system/data-freshness` | `api/system.py` | per-ticker staleness check |
 | `GET /api/tickers` | `api/tickers.py` | watchlist + latest close, EMA200, RSI, IV ATM, next earnings |
 | `GET /api/tickers/{symbol}/chart?range=1y` | `api/tickers.py` | OHLCV joined with EMA20/50/200 + RSI |
 | `GET /api/tickers/{symbol}/iv-history?range=1y` | `api/tickers.py` | iv_atm / iv_rank / iv_percentile series |
@@ -236,6 +275,7 @@ file per resource under `backend/api/`:
 | `GET /api/alerts/types` | `api/alerts.py` | distinct alert types observed in history |
 | `POST /api/alerts/{id}/ack` | `api/alerts.py` | toggle `user_acked` (body `{"acked": bool}`) |
 | `POST /api/alerts/test` | `api/alerts.py` | local-curl helper that fires a fixture payload through the dispatcher |
+| `GET /api/backtest/forward-returns` | `api/backtest.py` | forward-return analysis for screener picks |
 
 Range tokens accepted by chart/IV/macro endpoints: `1m`, `3m`, `6m`,
 `1y`, `2y`, `5y`, `max` (subset varies by endpoint).
