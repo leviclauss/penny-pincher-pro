@@ -31,6 +31,7 @@ from alembic import command
 from backtest.simulator import (
     LEG_CSP_ASSIGNED,
     LEG_CSP_OPEN,
+    LEG_SHARE_SOLD,
     StrategyParams,
     run_strategy_backtest,
 )
@@ -242,9 +243,132 @@ def test_assignment_path_creates_csp_assigned_trade(session: Session) -> None:
         assert t.outcome == "assigned"
         assert t.exit_date is not None
         assert t.strike is not None
-        # Realized P&L on assignment = (premium - intrinsic) * 100, typically
-        # negative for a steady downtrend.
+        # Realized P/L on the option leg is just the premium credit kept,
+        # net of opening fees — never negative regardless of how far the
+        # stock fell. The spot-vs-strike loss surfaces as unrealized on
+        # the share lot the assignment created.
         assert t.realized_pnl is not None
+        expected = t.entry_price * 100.0 - t.fees
+        assert t.realized_pnl == pytest.approx(expected)
+        assert t.realized_pnl >= 0
+
+
+def test_csp_assigned_share_lot_uses_strike_as_cost_basis(session: Session) -> None:
+    """The share lot born from a put assignment carries the actual strike paid.
+
+    The put premium credit lives on its own ``csp_assigned`` ledger row, not
+    folded into the cost basis. This keeps stock P/L (sale price vs. cost
+    basis) cleanly separable from option premium P/L.
+    """
+    from backtest.portfolio import OptionPosition, Portfolio
+    from backtest.simulator import _settle_short_put, _SimState
+    from screener.pipeline import ParsedConfig
+
+    portfolio = Portfolio(cash=10_000.0, starting_capital=10_000.0)
+    state = _SimState(
+        run_id=1,
+        portfolio=portfolio,
+        params=StrategyParams(),
+        config=ParsedConfig(id=1, name="x", filters=(), weights={}, sector_max=None),
+        universe=["TEST"],
+    )
+    opt = OptionPosition(
+        cycle_id=1,
+        symbol="TEST",
+        leg_type="short_put",
+        contracts=1,
+        strike=100.0,
+        expiration=date(2024, 7, 19),
+        entry_date=date(2024, 6, 21),
+        entry_premium=2.50,
+        fees_open=0.65,
+    )
+    portfolio.add_option(opt)
+    # Spot $90 → put is $10 ITM at expiry.
+    _settle_short_put(state, opt, day=date(2024, 7, 19), underlying=90.0)
+
+    assert len(portfolio.shares) == 1
+    lot = portfolio.shares[0]
+    assert lot.cost_basis == 100.0  # strike paid, NOT strike - premium
+    assert lot.shares == 100
+
+    assert len(state.pending) == 1
+    trade = state.pending[0]
+    assert trade.leg_type == LEG_CSP_ASSIGNED
+    assert trade.realized_pnl == pytest.approx(2.50 * 100 - 0.65)
+    assert trade.exit_price == 0.0
+
+
+def test_cc_assignment_emits_share_sold_row_with_pure_stock_pnl(session: Session) -> None:
+    """Covered-call assignment splits the realization into two rows.
+
+    The ``cc_assigned`` row carries the call's premium-only P/L; the
+    ``share_sold`` row carries the underlying stock P/L (strike - cost
+    basis). Sum of both equals the actual cash impact of the call exit.
+    """
+    from backtest.portfolio import OptionPosition, Portfolio, ShareLot
+    from backtest.simulator import (
+        LEG_CC_ASSIGNED,
+        _settle_short_call,
+        _SimState,
+    )
+    from screener.pipeline import ParsedConfig
+
+    portfolio = Portfolio(cash=5_000.0, starting_capital=5_000.0)
+    state = _SimState(
+        run_id=1,
+        portfolio=portfolio,
+        params=StrategyParams(),
+        config=ParsedConfig(id=1, name="x", filters=(), weights={}, sector_max=None),
+        universe=["TEST"],
+    )
+    portfolio.add_shares(
+        ShareLot(
+            cycle_id=7,
+            symbol="TEST",
+            shares=100,
+            cost_basis=95.0,
+            acquired_date=date(2024, 6, 1),
+        )
+    )
+    opt = OptionPosition(
+        cycle_id=7,
+        symbol="TEST",
+        leg_type="covered_call",
+        contracts=1,
+        strike=100.0,
+        expiration=date(2024, 7, 19),
+        entry_date=date(2024, 6, 21),
+        entry_premium=1.20,
+        fees_open=0.65,
+        cost_basis=95.0,
+    )
+    portfolio.add_option(opt)
+    # Spot $110 → call is $10 ITM at expiry, shares are called away at $100.
+    _settle_short_call(state, opt, day=date(2024, 7, 19), underlying=110.0)
+
+    legs = {p.leg_type: p for p in state.pending}
+    assert LEG_CC_ASSIGNED in legs
+    assert LEG_SHARE_SOLD in legs
+
+    cc = legs[LEG_CC_ASSIGNED]
+    sold = legs[LEG_SHARE_SOLD]
+
+    # Call leg: pure premium credit, never swings with the stock.
+    assert cc.realized_pnl == pytest.approx(1.20 * 100 - 0.65)
+    assert cc.exit_price == 0.0
+
+    # Share leg: (strike - cost_basis) * shares — stock P/L, separated.
+    assert sold.realized_pnl == pytest.approx((100.0 - 95.0) * 100)
+    assert sold.entry_price == pytest.approx(95.0)
+    assert sold.exit_price == pytest.approx(100.0)
+    assert sold.cycle_id == 7
+    assert sold.expiration is None
+    assert sold.fees == 0.0
+    assert sold.outcome == "shares_called_away"
+
+    # Shares are gone from the portfolio after delivery.
+    assert portfolio.shares == []
 
 
 def test_unknown_config_id_raises(session: Session) -> None:

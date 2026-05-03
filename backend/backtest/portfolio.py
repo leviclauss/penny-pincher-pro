@@ -68,7 +68,9 @@ class ShareLot:
     cycle_id: int
     symbol: str
     shares: int
-    cost_basis: float  # per-share basis (typically strike - put credit)
+    cost_basis: float  # per-share strike paid at assignment; the put
+    # premium credit lives on its own ``csp_assigned`` ledger row, so
+    # share P/L (sale proceeds vs. cost basis) is the pure stock leg.
     acquired_date: date
 
 
