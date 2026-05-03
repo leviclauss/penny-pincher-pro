@@ -205,6 +205,7 @@ Schema decisions worth knowing:
 | List recent job runs | `curl http://localhost:8000/api/system/job-runs` |
 | Frontend dev server | `make run-frontend` |
 | Update indicator snapshot | `cd backend && pytest tests/test_indicators.py --snapshot-update` |
+| Run a filter backtest | `cd backend && python -m backtest.cli --config-id N --start YYYY-MM-DD --end YYYY-MM-DD` |
 
 A typical first run from a clean clone:
 
@@ -231,6 +232,10 @@ file per resource under `backend/api/`:
 | `GET /api/macro/current` | `api/macro.py` | most recent macro_daily row, or null |
 | `GET /api/macro/history?range=6m` | `api/macro.py` | VIX/SPY series |
 | `GET /api/earnings/upcoming?days=7` | `api/earnings.py` | active-watchlist earnings within window |
+| `GET /api/alerts` | `api/alerts.py` | history feed; filters: `since`, `until`, `alert_type`, `symbol`, `limit`, `offset` |
+| `GET /api/alerts/types` | `api/alerts.py` | distinct alert types observed in history |
+| `POST /api/alerts/{id}/ack` | `api/alerts.py` | toggle `user_acked` (body `{"acked": bool}`) |
+| `POST /api/alerts/test` | `api/alerts.py` | local-curl helper that fires a fixture payload through the dispatcher |
 
 Range tokens accepted by chart/IV/macro endpoints: `1m`, `3m`, `6m`,
 `1y`, `2y`, `5y`, `max` (subset varies by endpoint).
@@ -246,6 +251,8 @@ Routes shipped (read-only, mobile-responsive shell with sidebar nav):
 - `/tickers/{symbol}` — Header (last close + day change), 1y price
   chart with toggleable EMA 20/50/200 overlays and earnings reference
   lines, RSI(14) sub-panel, IV ATM history.
+- `/alerts` — Chronological alert feed with type/symbol/date filters,
+  payload-inspection dialog, per-row ack toggle.
 
 Stack additions:
 - `react-router-dom` v6 for routing.
@@ -256,9 +263,9 @@ Stack additions:
 - Every fetch goes through TanStack Query; helpers in
   `src/api/client.ts`, response shapes in `src/api/types.ts`.
 
-Out of scope until later sessions: `/screener`, `/configs`,
-`/positions`, `/alerts`, `/backtest`, `/settings`, auth, and any
-mutations.
+Out of scope until later sessions: `/configs`, `/backtest`,
+`/settings`, auth, and any read-only-→-write mutations not already
+listed above.
 
 ## How to add a screener filter (partner track)
 
@@ -375,6 +382,27 @@ in the payload*.
 4. Wire it into `ingestion.pipeline` if it should be part of the daily run.
 5. Add tests under `backend/tests/` using a `FakeAlpacaClient`-style
    stub. Don't hit the network in tests.
+
+## How to run a filter backtest
+
+The filter backtest replays one screener config day-by-day across an NYSE
+trading-day calendar and records the realized forward return for each
+``(symbol, day)`` pass. v0 ships the candidate-quality eval only — the full
+strategy simulator (option pricing, equity curve, capital management) is
+deferred. See [`docs/planning/06-backtesting.md`](docs/planning/06-backtesting.md).
+
+```bash
+cd backend && python -m backtest.cli \
+  --config-id 1 \
+  --start 2024-01-01 --end 2025-01-01 \
+  --forward-days 30                  # trading days from entry to exit close
+  # --symbols AAPL,MSFT              # restrict universe (default = active watchlist)
+```
+
+Writes a row to ``backtest_runs`` and one row per pass to ``backtest_trades``
+(``leg_type="filter_pass"``). Filters that need an options chain mark
+themselves ineligible cleanly; unexpected per-symbol failures are logged
+(``backtest.symbol.error``) and skipped.
 
 ## CI
 

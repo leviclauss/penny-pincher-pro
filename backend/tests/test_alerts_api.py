@@ -1,4 +1,4 @@
-"""Smoke test for POST /api/system/alerts/test.
+"""Smoke test for POST /api/alerts/test.
 
 Replaces the real Telegram channel with a fake so the endpoint can be
 exercised end-to-end without network. Verifies that an ``alerts`` row is
@@ -72,7 +72,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
 
 
 def test_test_endpoint_dispatches_canned_payload(client: TestClient) -> None:
-    response = client.post("/api/system/alerts/test?channel=telegram")
+    response = client.post("/api/alerts/test?channel=telegram")
     assert response.status_code == 200
     body = response.json()
     assert body["channel"] == "telegram"
@@ -90,10 +90,10 @@ def test_test_endpoint_dispatches_canned_payload(client: TestClient) -> None:
 
 
 def test_test_endpoint_unknown_channel_404(client: TestClient) -> None:
-    response = client.post("/api/system/alerts/test?channel=fax")
+    response = client.post("/api/alerts/test?channel=fax")
     assert response.status_code == 404
 
 
 def test_test_endpoint_unknown_alert_type_404(client: TestClient) -> None:
-    response = client.post("/api/system/alerts/test?alert_type=does_not_exist")
+    response = client.post("/api/alerts/test?alert_type=does_not_exist")
     assert response.status_code == 404
