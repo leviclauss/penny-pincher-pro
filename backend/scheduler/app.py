@@ -21,6 +21,7 @@ from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from core.config import get_settings
 from core.logging import get_logger
@@ -33,6 +34,8 @@ from scheduler.jobs.digest import MORNING_JOB_NAME as MORNING_DIGEST_JOB_NAME
 from scheduler.jobs.digest import run_evening_digest, run_morning_digest
 from scheduler.jobs.evening import JOB_NAME as EVENING_JOB_NAME
 from scheduler.jobs.evening import run_evening_pipeline
+from scheduler.jobs.intraday import JOB_NAME as INTRADAY_JOB_NAME
+from scheduler.jobs.intraday import run_intraday_pulse
 from scheduler.jobs.positions import JOB_NAME as POSITIONS_JOB_NAME
 from scheduler.jobs.positions import run_position_management
 from scheduler.jobs.screener import JOB_NAME as SCREENER_JOB_NAME
@@ -140,6 +143,12 @@ def create_and_start() -> BackgroundScheduler:
         settings.scheduler_evening_digest_minute,
         settings.timezone,
     )
+    if settings.scheduler_intraday_enabled:
+        _register_intraday(
+            scheduler,
+            settings.scheduler_intraday_interval_minutes,
+            settings.timezone,
+        )
     scheduler.start()
     log.info(
         "scheduler.started",
@@ -154,6 +163,8 @@ def create_and_start() -> BackgroundScheduler:
         morning_digest_minute=settings.scheduler_morning_digest_minute,
         evening_digest_hour=settings.scheduler_evening_digest_hour,
         evening_digest_minute=settings.scheduler_evening_digest_minute,
+        intraday_enabled=settings.scheduler_intraday_enabled,
+        intraday_interval_minutes=settings.scheduler_intraday_interval_minutes,
     )
     return scheduler
 
@@ -318,6 +329,48 @@ def _evening_digest_entry() -> None:
     calendar = settings.market_calendar or None
     with get_session() as session:
         run_evening_digest(session, market_calendar=calendar)
+
+
+def _register_intraday(
+    scheduler: BackgroundScheduler, interval_minutes: int, timezone: str
+) -> None:
+    cron = f"*/{interval_minutes} * * * mon-fri"
+    schedule_human = f"Every {interval_minutes}m during RTH"
+    scheduler.add_job(
+        _intraday_entry,
+        trigger=IntervalTrigger(minutes=interval_minutes),
+        id=INTRADAY_JOB_NAME,
+        replace_existing=True,
+    )
+    register_job(
+        INTRADAY_JOB_NAME,
+        factory=lambda: _intraday_entry,
+        description=(
+            "Intraday alert pulse: setup_triggered + iv_spike. RTH-gated; off by default."
+        ),
+        cron=cron,
+        timezone=timezone,
+        schedule_human=schedule_human,
+    )
+
+
+def _intraday_entry() -> None:
+    settings = get_settings()
+    calendar = settings.market_calendar or None
+    alpaca = build_alpaca_client()
+    if alpaca is None:
+        log.warning("intraday_pulse.no_alpaca_creds_skipped")
+        return
+    quote_source = alpaca.get_latest_quotes
+    options = build_options_client() if settings.intraday_iv_spike_enabled else None
+    chain_source = options.get_chain if options is not None else None
+    with get_session() as session:
+        run_intraday_pulse(
+            session,
+            quote_source=quote_source,
+            chain_source=chain_source,
+            market_calendar=calendar,
+        )
 
 
 def build_alpaca_client() -> AlpacaClient | None:

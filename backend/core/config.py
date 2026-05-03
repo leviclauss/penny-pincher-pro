@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     scheduler_evening_digest_minute: int = 30
     market_calendar: str = "NYSE"
 
+    # Intraday alert pulse — disabled by default; opt in per deployment.
+    scheduler_intraday_enabled: bool = False
+    scheduler_intraday_interval_minutes: int = 15
+    intraday_quote_max_age_s: int = 90
+    intraday_iv_spike_enabled: bool = False
+    intraday_iv_spike_pct: float = 0.20
+    intraday_iv_spike_interval_minutes: int = 30
+
     telegram_bot_token: str = Field(default="")
     telegram_chat_id: str = Field(default="")
     telegram_parse_mode: str = "MarkdownV2"

@@ -72,13 +72,15 @@ backend/
       screener.py   Daily screener pass over the watchlist
       positions.py  Daily snapshot + management-rule pass
       digest.py     Morning + evening Telegram digest jobs
+      intraday.py   Intraday alert pulse (setup_triggered + iv_spike)
   alerts/
     dispatcher.py   Per-type fan-out + persistence (one row per fire)
     channels/       base.py + telegram.py (HTTP-only Bot API adapter)
     templates/      Jinja MarkdownV2 templates per alert_type + renderer
     triggers/       Payload builders per family
       digest.py     Morning + evening digest builders
-      _dedup.py     Shared "already dispatched for as_of" check
+      intraday.py   setup_triggered + iv_spike payload builders
+      _dedup.py     Shared dedup checks (per-as_of, per-position-rule, per-symbol-per-day, morning-digest membership)
       _freshness.py Stale-bar guard for trigger jobs
   positions/        Wheel lifecycle + management rules
   backtest/         Filter forward-return + full strategy sim (later)
@@ -199,6 +201,7 @@ Schema decisions worth knowing:
 | Trigger a job manually | `curl -X POST http://localhost:8000/api/system/jobs/evening_pipeline/run` |
 | Trigger morning digest | `curl -X POST http://localhost:8000/api/system/jobs/morning_digest/run` |
 | Trigger evening digest | `curl -X POST http://localhost:8000/api/system/jobs/evening_digest/run` |
+| Trigger one intraday tick (only registered when `SCHEDULER_INTRADAY_ENABLED=true`) | `curl -X POST http://localhost:8000/api/system/jobs/intraday_pulse/run` |
 | List recent job runs | `curl http://localhost:8000/api/system/job-runs` |
 | Frontend dev server | `make run-frontend` |
 | Update indicator snapshot | `cd backend && pytest tests/test_indicators.py --snapshot-update` |
@@ -335,6 +338,12 @@ in the payload*.
      `alerts.triggers._dedup.already_dispatched_for_position_rule`.
      Each new wheel cycle is a fresh ``Position`` row, so matching on
      ``position_id`` alone naturally resets the lifecycle dedup.
+   - intraday per-symbol events (``setup_triggered``, ``iv_spike``) →
+     include ``as_of`` + ``symbol`` and use
+     `alerts.triggers._dedup.already_dispatched_for_symbol_on`. For
+     ``setup_triggered`` also call
+     `alerts.triggers._dedup.symbol_in_morning_digest` first to enforce
+     the doc 03 rule "suppress if ticker already in morning summary."
 3. **Add a Telegram template** under
    `backend/alerts/templates/telegram/<alert_type>.md.j2`. Run every
    payload value through the `esc` filter — MarkdownV2 will silently
