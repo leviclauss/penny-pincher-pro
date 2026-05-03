@@ -74,6 +74,21 @@ class Settings(BaseSettings):
     # alert templates render "Open" deep links into the relevant pages.
     web_base_url: str = Field(default="")
 
+    # --- Nightly SQLite backup ---
+    # Local snapshot directory. Relative paths resolve next to the live DB
+    # file (so the default lands in repo_root/data/backups/).
+    backup_dir: str = str(REPO_ROOT / "data" / "backups")
+    backup_retention: int = 14
+    scheduler_backup_hour: int = 3
+    scheduler_backup_minute: int = 0
+    # Off-site upload — disabled by default. Provider is one of "s3" or "b2"
+    # (see scheduler.jobs.backup.upload_offsite for the current stub +
+    # wiring note).
+    backup_offsite_enabled: bool = False
+    backup_offsite_provider: str = Field(default="")
+    backup_offsite_bucket: str = Field(default="")
+    backup_offsite_prefix: str = Field(default="")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
