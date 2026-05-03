@@ -161,18 +161,27 @@ name with " (copy)", flips `is_active=false`, and POSTs. The
 `FilterConfigSummary` API response gained an `updated_at` field so the
 list can show "last updated" without an extra detail roundtrip.
 
-### PR 4 — Frontend config editor
+### PR 4 — Frontend config editor *(this PR)*
 
-- New `pages/ScreenerConfigEditor.tsx` reachable at
+- [x] New `pages/ScreenerConfigEditor.tsx` reachable at
   `/screener/configs/new` and `/screener/configs/:id`.
-- Three sections: identity (name, description, active), filters
-  (sortable list of cards with per-param inputs typed from
+- [x] Three sections: identity (name, description, active), filters
+  (reorderable list of cards with per-param inputs typed from
   `PARAM_SCHEMA` + an "add filter" picker grouped by category), and
   scoring (weight inputs only for filters with `scored=true`, with a
   live "weights sum" indicator).
-- Sticky footer with Cancel / Save (disabled until dirty + valid) +
+- [x] Sticky footer with Cancel / Save (disabled until dirty + valid) +
   overflow menu (Duplicate, View as JSON).
-- Client-side validation mirrors what the POST endpoint enforces.
+- [x] Client-side validation mirrors what the POST endpoint enforces
+  (duplicate ids, unknown ids, param min/max/integer/tier_set, scoring
+  references scored filters present in `filters[]`, weights ≥ 0).
+
+Reorder uses up/down buttons rather than drag-and-drop to avoid pulling
+in a DnD library — order is rarely changed in practice.
+
+Postprocessor `sector_concentration` is hardcoded as a known special
+case so seed configs round-trip cleanly. The "Add filter" picker still
+omits it (the postprocessor catalog is parked under "Open questions").
 
 ### PR 5 — Wire affordances into Screener page
 

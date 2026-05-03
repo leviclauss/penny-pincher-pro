@@ -114,6 +114,30 @@ export interface ScreenerConfigDetail extends ScreenerConfigSummary {
   config_json: Record<string, unknown>;
 }
 
+export type FilterParamKind = "number" | "integer" | "percent" | "currency" | "tier_set";
+
+export interface FilterParamSchema {
+  name: string;
+  label: string;
+  kind: FilterParamKind;
+  default: number | number[];
+  min: number | null;
+  max: number | null;
+  step: number | null;
+  description: string | null;
+}
+
+export type FilterCategory = "trend" | "volatility" | "liquidity" | "event";
+
+export interface FilterCatalogEntry {
+  id: string;
+  label: string;
+  description: string;
+  category: FilterCategory;
+  scored: boolean;
+  params: FilterParamSchema[];
+}
+
 export interface ScreenerFilterEntryIn {
   id: string;
   params?: Record<string, unknown>;
