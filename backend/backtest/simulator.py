@@ -267,16 +267,10 @@ def run_strategy_backtest(
                             round(opt.cost_basis, 4) if opt.cost_basis is not None else None
                         ),
                         "premium_per_share": round(opt.entry_premium, 4),
-                        "premium_total_credit": round(
-                            opt.entry_premium * opt.shares_covered, 2
-                        ),
+                        "premium_total_credit": round(opt.entry_premium * opt.shares_covered, 2),
                         "fees_open": round(opt.fees_open, 2),
-                        "spot_at_run_end": (
-                            round(last_spot, 4) if last_spot is not None else None
-                        ),
-                        "explanation": (
-                            "Position still open at end of backtest window."
-                        ),
+                        "spot_at_run_end": (round(last_spot, 4) if last_spot is not None else None),
+                        "explanation": ("Position still open at end of backtest window."),
                     },
                 )
             )
@@ -425,22 +419,16 @@ def _settle_short_put(state: _SimState, opt: OptionPosition, day: date, underlyi
                     "strike": opt.strike,
                     "intrinsic_at_exit": 0.0,
                     "premium_per_share": round(opt.entry_premium, 4),
-                    "premium_total_credit": round(
-                        opt.entry_premium * opt.shares_covered, 2
-                    ),
+                    "premium_total_credit": round(opt.entry_premium * opt.shares_covered, 2),
                     "fees_open": round(opt.fees_open, 2),
                     "fees_close": 0.0,
                     "days_held": days_held,
                     "pnl_breakdown": {
-                        "premium_kept": round(
-                            opt.entry_premium * opt.shares_covered, 2
-                        ),
+                        "premium_kept": round(opt.entry_premium * opt.shares_covered, 2),
                         "fees": round(-opt.fees_open, 2),
                         "net": round(realized, 2),
                     },
-                    "explanation": (
-                        "Put expired OTM; full premium kept, collateral released."
-                    ),
+                    "explanation": ("Put expired OTM; full premium kept, collateral released."),
                 },
             )
         )
@@ -487,9 +475,7 @@ def _settle_short_put(state: _SimState, opt: OptionPosition, day: date, underlyi
                 "strike": opt.strike,
                 "intrinsic_at_exit": round(intrinsic, 4),
                 "premium_per_share": round(opt.entry_premium, 4),
-                "premium_total_credit": round(
-                    opt.entry_premium * opt.shares_covered, 2
-                ),
+                "premium_total_credit": round(opt.entry_premium * opt.shares_covered, 2),
                 "fees_open": round(opt.fees_open, 2),
                 "fees_close": 0.0,
                 "days_held": days_held,
@@ -497,9 +483,7 @@ def _settle_short_put(state: _SimState, opt: OptionPosition, day: date, underlyi
                 "share_cost_basis": opt.strike,
                 "share_unrealized_pnl_at_assignment": round(paper_loss_on_shares, 2),
                 "pnl_breakdown": {
-                    "premium_kept": round(
-                        opt.entry_premium * opt.shares_covered, 2
-                    ),
+                    "premium_kept": round(opt.entry_premium * opt.shares_covered, 2),
                     "fees": round(-opt.fees_open, 2),
                     "net": round(realized, 2),
                 },
@@ -547,22 +531,16 @@ def _settle_short_call(state: _SimState, opt: OptionPosition, day: date, underly
                         round(opt.cost_basis, 4) if opt.cost_basis is not None else None
                     ),
                     "premium_per_share": round(opt.entry_premium, 4),
-                    "premium_total_credit": round(
-                        opt.entry_premium * opt.shares_covered, 2
-                    ),
+                    "premium_total_credit": round(opt.entry_premium * opt.shares_covered, 2),
                     "fees_open": round(opt.fees_open, 2),
                     "fees_close": 0.0,
                     "days_held": days_held,
                     "pnl_breakdown": {
-                        "premium_kept": round(
-                            opt.entry_premium * opt.shares_covered, 2
-                        ),
+                        "premium_kept": round(opt.entry_premium * opt.shares_covered, 2),
                         "fees": round(-opt.fees_open, 2),
                         "net": round(realized, 2),
                     },
-                    "explanation": (
-                        "Call expired OTM; full premium kept, shares retained."
-                    ),
+                    "explanation": ("Call expired OTM; full premium kept, shares retained."),
                 },
             )
         )
@@ -625,17 +603,13 @@ def _settle_short_call(state: _SimState, opt: OptionPosition, day: date, underly
                     round(opt.cost_basis, 4) if opt.cost_basis is not None else None
                 ),
                 "premium_per_share": round(opt.entry_premium, 4),
-                "premium_total_credit": round(
-                    opt.entry_premium * opt.shares_covered, 2
-                ),
+                "premium_total_credit": round(opt.entry_premium * opt.shares_covered, 2),
                 "fees_open": round(opt.fees_open, 2),
                 "fees_close": 0.0,
                 "days_held": days_held,
                 "shares_called_away": shares_sold,
                 "pnl_breakdown": {
-                    "premium_kept": round(
-                        opt.entry_premium * opt.shares_covered, 2
-                    ),
+                    "premium_kept": round(opt.entry_premium * opt.shares_covered, 2),
                     "fees": round(-opt.fees_open, 2),
                     "net": round(option_realized, 2),
                 },
@@ -779,9 +753,7 @@ def _close_option_for_credit(
                     round(opt.cost_basis, 4) if opt.cost_basis is not None else None
                 ),
                 "premium_per_share": round(opt.entry_premium, 4),
-                "premium_total_credit": round(
-                    opt.entry_premium * opt.shares_covered, 2
-                ),
+                "premium_total_credit": round(opt.entry_premium * opt.shares_covered, 2),
                 "close_quote_mid": round(quote_mid, 4),
                 "close_slippage_per_share": state.params.slippage_per_share,
                 "close_cost_per_share": round(close_cost, 4),
@@ -793,9 +765,7 @@ def _close_option_for_credit(
                 "days_to_expiry_at_close": days_to_expiry_remaining,
                 "rule_triggered": rule,
                 "pnl_breakdown": {
-                    "premium_received": round(
-                        opt.entry_premium * opt.shares_covered, 2
-                    ),
+                    "premium_received": round(opt.entry_premium * opt.shares_covered, 2),
                     "buyback_cost": round(-close_cost * opt.shares_covered, 2),
                     "fees": round(-(opt.fees_open + fee_close), 2),
                     "net": round(realized, 2),
@@ -906,9 +876,7 @@ def _open_covered_calls(
                     "quote_mid": round(quote.mid, 4),
                     "slippage_per_share": state.params.slippage_per_share,
                     "premium_per_share": round(credit_per_share, 4),
-                    "premium_total_credit": round(
-                        credit_per_share * position.shares_covered, 2
-                    ),
+                    "premium_total_credit": round(credit_per_share * position.shares_covered, 2),
                     "fees_open": round(fee_open, 2),
                     "days_to_expiry_at_open": days_to_expiry,
                     "delta_target": state.params.delta_target,
@@ -1013,9 +981,7 @@ def _open_short_puts(
                     "quote_mid": round(quote.mid, 4),
                     "slippage_per_share": state.params.slippage_per_share,
                     "premium_per_share": round(credit_per_share, 4),
-                    "premium_total_credit": round(
-                        credit_per_share * position.shares_covered, 2
-                    ),
+                    "premium_total_credit": round(credit_per_share * position.shares_covered, 2),
                     "fees_open": round(fee_open, 2),
                     "collateral_locked": round(collateral, 2),
                     "days_to_expiry_at_open": days_to_expiry,
