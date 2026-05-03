@@ -22,6 +22,10 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoes
 TEMPLATES_DIR = Path(__file__).resolve().parent / "telegram"
 MAX_MESSAGE_CHARS = 4096
 
+# Re-export the shared template root so other channel renderers can locate
+# their template directories without duplicating ``Path`` arithmetic.
+TEMPLATES_ROOT = Path(__file__).resolve().parent
+
 # Per https://core.telegram.org/bots/api#markdownv2-style: the following
 # characters must be escaped with a backslash anywhere they appear as
 # literal text (i.e. outside of formatting entities).

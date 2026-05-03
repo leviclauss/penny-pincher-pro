@@ -1,0 +1,16 @@
+Title: Position alert - {{ symbol }}
+{% if rule == "pct_max_profit" %}
+>={{ "%.0f" | format(threshold * 100) }}% profit captured ({{ "%.0f" | format(pct_max_profit * 100) }}% of max).
+{% elif rule == "dte" %}
+<={{ threshold }} DTE reached ({{ dte }} days left).
+{% elif rule == "delta_breach" %}
+Short put delta {{ "%.2f" | format(delta) }} (threshold {{ "%.2f" | format(threshold) }}).
+{% elif rule == "near_strike" %}
+Underlying {{ "%.2f" | format(underlying) }} within {{ "%.1f" | format(diff_pct * 100) }}% of strike {{ "%.2f" | format(strike) }}.
+{% elif rule == "cc_itm_short_dte" %}
+Covered call ITM at {{ dte }} DTE - underlying {{ "%.2f" | format(underlying) }} vs strike {{ "%.2f" | format(strike) }}.
+{% elif rule == "stale_position" %}
+Open {{ days_open }} days (threshold {{ threshold }}).
+{% else %}
+Rule fired: {{ rule }}.
+{% endif %}

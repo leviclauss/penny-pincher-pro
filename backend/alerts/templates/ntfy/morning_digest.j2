@@ -1,0 +1,11 @@
+Title: Morning digest - {{ as_of }}
+VIX {{ "%.1f" | format(macro.vix) }} | term {{ "%.2f" | format(macro.term) }} | SPY {% if macro.spy_above_200ema %}above{% else %}below{% endif %} 200EMA
+{% if screener_hits %}
+Hits ({{ screener_hits | length }}): {% for h in screener_hits %}{{ h.symbol }}{% if not loop.last %}, {% endif %}{% endfor %}
+
+{% else %}
+No screener hits.
+{% endif %}
+{% if earnings_today %}
+Earnings: {% for e in earnings_today %}{{ e.symbol }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}

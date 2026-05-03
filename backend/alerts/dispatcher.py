@@ -5,9 +5,12 @@ hit. Missing preferences default to a single-channel ``["telegram"]`` config
 with quiet hours disabled — that lets phase 1 work before the screener
 pipeline is seeding rows.
 
-The dispatcher is best-effort per channel: a failed delivery omits that
-channel id from ``alerts.channels_sent`` but doesn't abort the others, and
-the alert row is written regardless so the in-app history is complete.
+The dispatcher is best-effort per channel: each enabled channel renders
+its own template and delivers independently. A failure on one channel logs
++ continues; the channel id is omitted from ``alerts.channels_sent`` but
+the alert row is written regardless so the in-app history stays complete.
+Multiple channels for the same fire produce **one** ``alerts`` row — channels
+are a delivery detail, not a separate alert per channel.
 """
 
 from __future__ import annotations
@@ -21,6 +24,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 
 from alerts.channels.base import Channel
+from alerts.channels.email import EmailChannel
+from alerts.channels.ntfy import NtfyChannel
 from alerts.channels.telegram import TelegramChannel
 from core.config import get_settings
 from core.logging import get_logger
@@ -56,7 +61,11 @@ _DEFAULT_PREFERENCE = _ResolvedPreference(
 
 
 def _build_default_registry() -> dict[str, Channel]:
-    return {"telegram": TelegramChannel()}
+    return {
+        "telegram": TelegramChannel(),
+        "email": EmailChannel(),
+        "ntfy": NtfyChannel(),
+    }
 
 
 CHANNELS: dict[str, Channel] = _build_default_registry()
@@ -93,7 +102,16 @@ def dispatch(
         if channel is None:
             log.warning("dispatch.channel.unknown", channel=channel_id, alert_type=alert_type)
             continue
-        result = channel.send(alert_type, payload)
+        try:
+            result = channel.send(alert_type, payload)
+        except Exception as exc:
+            log.error(
+                "dispatch.channel.exception",
+                channel=channel_id,
+                alert_type=alert_type,
+                error=str(exc),
+            )
+            continue
         if result.delivered:
             sent.append(channel_id)
         else:

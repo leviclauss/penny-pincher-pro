@@ -70,6 +70,8 @@ class JobInfoOut(BaseModel):
 
 class ChannelsStatus(BaseModel):
     telegram: bool
+    email: bool
+    ntfy: bool
 
 
 @router.get("/health", response_model=HealthStatus)
@@ -92,7 +94,11 @@ def health() -> HealthStatus:
 @router.get("/channels", response_model=ChannelsStatus)
 def channels_status() -> ChannelsStatus:
     settings = get_settings()
-    return ChannelsStatus(telegram=bool(settings.telegram_bot_token))
+    return ChannelsStatus(
+        telegram=bool(settings.telegram_bot_token and settings.telegram_chat_id),
+        email=bool(settings.smtp_host and settings.smtp_from_address and settings.smtp_to_address),
+        ntfy=bool(settings.ntfy_topic),
+    )
 
 
 @router.get("/job-runs", response_model=list[JobRunOut])

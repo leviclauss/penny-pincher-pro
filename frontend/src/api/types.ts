@@ -111,6 +111,8 @@ export interface AlertPreferenceUpdate {
 
 export interface ChannelsStatus {
   telegram: boolean;
+  email: boolean;
+  ntfy: boolean;
 }
 
 export interface UpcomingEarning {

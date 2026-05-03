@@ -164,3 +164,103 @@ def test_dispatch_warns_on_unknown_channel(db: None) -> None:
     assert result.channels_attempted == ["sms"]
     assert result.channels_sent == []
     assert result.alert_id is not None
+
+
+def test_dispatch_fans_out_to_all_enabled_channels(db: None) -> None:
+    """Each channel listed in preferences receives the same payload + one alerts row."""
+    from db import get_session
+
+    with get_session() as session:
+        session.add(
+            AlertPreference(
+                alert_type="iv_spike",
+                channels=["telegram", "email", "ntfy"],
+                enabled=True,
+            )
+        )
+
+    fakes = {
+        "telegram": FakeChannel("telegram"),
+        "email": FakeChannel("email"),
+        "ntfy": FakeChannel("ntfy"),
+    }
+    registry: dict[str, Channel] = dict(fakes)
+
+    payload = {"symbol": "AAPL", "as_of": "2026-05-04"}
+    result = dispatch("iv_spike", payload, registry=registry)
+
+    assert result.channels_attempted == ["telegram", "email", "ntfy"]
+    assert result.channels_sent == ["telegram", "email", "ntfy"]
+    for fake in fakes.values():
+        assert fake.calls == [("iv_spike", payload)]
+
+    # One alert row, not three.
+    with get_session() as session:
+        rows = session.execute(select(Alert).where(Alert.id == result.alert_id)).scalars().all()
+        assert len(rows) == 1
+        channels_sent = rows[0].channels_sent
+        assert channels_sent is not None
+        assert "telegram" in channels_sent
+        assert "email" in channels_sent
+        assert "ntfy" in channels_sent
+
+
+def test_dispatch_continues_after_one_channel_failure(db: None) -> None:
+    """Sibling channels still deliver when one fails; alert row is still written."""
+    from db import get_session
+
+    with get_session() as session:
+        session.add(
+            AlertPreference(
+                alert_type="setup_triggered",
+                channels=["telegram", "email", "ntfy"],
+                enabled=True,
+            )
+        )
+
+    fakes = {
+        "telegram": FakeChannel("telegram", delivered=True),
+        "email": FakeChannel("email", delivered=False),
+        "ntfy": FakeChannel("ntfy", delivered=True),
+    }
+    result = dispatch(
+        "setup_triggered",
+        {"symbol": "MSFT"},
+        registry=dict(fakes),
+    )
+
+    assert result.channels_attempted == ["telegram", "email", "ntfy"]
+    assert result.channels_sent == ["telegram", "ntfy"]
+    assert result.alert_id is not None
+    # All three channels were tried even though email failed.
+    for fake in fakes.values():
+        assert len(fake.calls) == 1
+
+
+def test_dispatch_swallows_channel_exception(db: None) -> None:
+    """An exception inside ``send`` is logged and skipped, not propagated."""
+    from db import get_session
+
+    with get_session() as session:
+        session.add(
+            AlertPreference(
+                alert_type="iv_spike",
+                channels=["explody", "ntfy"],
+                enabled=True,
+            )
+        )
+
+    class ExplodingChannel:
+        id = "explody"
+
+        def send(self, alert_type: str, payload: dict[str, Any]) -> ChannelResult:
+            raise RuntimeError("kaboom")
+
+    ntfy = FakeChannel("ntfy")
+    registry: dict[str, Channel] = {"explody": ExplodingChannel(), "ntfy": ntfy}
+    result = dispatch("iv_spike", {"symbol": "AAPL"}, registry=registry)
+
+    assert result.channels_attempted == ["explody", "ntfy"]
+    assert result.channels_sent == ["ntfy"]
+    assert len(ntfy.calls) == 1
+    assert result.alert_id is not None
