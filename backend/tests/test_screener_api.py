@@ -212,6 +212,53 @@ def test_list_results_returns_empty_when_no_data(client: TestClient) -> None:
     assert body["rows"] == []
 
 
+def test_filter_catalog_returns_one_entry_per_registered_filter(
+    client: TestClient,
+) -> None:
+    from screener.registry import FILTER_REGISTRY
+
+    response = client.get("/api/screener/filters")
+    assert response.status_code == 200
+    body = response.json()
+    assert {entry["id"] for entry in body} == set(FILTER_REGISTRY.keys())
+    # Sorted by ID so the UI doesn't have to.
+    assert [entry["id"] for entry in body] == sorted(FILTER_REGISTRY.keys())
+
+
+def test_filter_catalog_serializes_param_schema(client: TestClient) -> None:
+    body = client.get("/api/screener/filters").json()
+    by_id = {entry["id"]: entry for entry in body}
+
+    near_200ema = by_id["near_200ema"]
+    assert near_200ema["category"] == "trend"
+    assert near_200ema["scored"] is True
+    assert near_200ema["label"]
+    [param] = near_200ema["params"]
+    assert param == {
+        "name": "max_pct",
+        "label": "Max distance from 200 EMA",
+        "kind": "percent",
+        "default": 0.03,
+        "min": 0.0,
+        "max": 0.5,
+        "step": 0.005,
+        "description": None,
+    }
+
+    # tier_set kind serializes its tuple default as a JSON list.
+    tier_allowed = by_id["tier_allowed"]
+    [tier_param] = tier_allowed["params"]
+    assert tier_param["kind"] == "tier_set"
+    assert tier_param["default"] == [1, 2]
+
+
+def test_filter_catalog_lists_paramless_filters(client: TestClient) -> None:
+    body = client.get("/api/screener/filters").json()
+    by_id = {entry["id"]: entry for entry in body}
+    assert by_id["weekly_above_200ema"]["params"] == []
+    assert by_id["bb_lower_touch"]["params"] == []
+
+
 def test_symbol_history_returns_recent_rows(client: TestClient) -> None:
     config_id = _seed_config("c", {"filters": [{"id": "rsi_oversold"}]})
     _seed_ticker_with_indicator("AAA")
