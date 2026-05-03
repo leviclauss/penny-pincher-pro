@@ -183,15 +183,18 @@ Postprocessor `sector_concentration` is hardcoded as a known special
 case so seed configs round-trip cleanly. The "Add filter" picker still
 omits it (the postprocessor catalog is parked under "Open questions").
 
-### PR 5 — Wire affordances into Screener page
+### PR 5 — Wire affordances into Screener page *(this PR)*
 
-- "+ New config" item at the bottom of the dropdown on
-  `frontend/src/pages/Screener.tsx`.
-- "Edit config" pencil button next to the dropdown that links to
-  `/screener/configs/{configId}`.
-- After mutations, `queryClient.invalidateQueries(["screener",
+- [x] "+ New config" item at the bottom of the dropdown on
+  `frontend/src/pages/Screener.tsx` (sentinel `__new__` value navigates
+  to the editor instead of changing the selection).
+- [x] "Edit config" pencil button next to the dropdown that links to
+  `/screener/configs/{configId}` (only rendered when a config is
+  selected).
+- [x] After mutations, `queryClient.invalidateQueries(["screener",
   "configs"])` so the dropdown picks up new/renamed configs without a
-  page reload.
+  page reload — already wired by PR3 (list page) and PR4 (editor); the
+  Screener page reads the same query key.
 
 ## Open questions parked for later
 

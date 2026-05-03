@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowDown, ArrowUp, ArrowUpDown, Settings2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Pencil, Settings2 } from "lucide-react";
 import { fetchScreenerConfigs, fetchScreenerResults } from "@/api/client";
 import type { ScreenerResultRow } from "@/api/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -153,20 +153,37 @@ export function Screener(): JSX.Element {
               <div className="flex items-center gap-1">
                 <select
                   value={configId ?? ""}
-                  onChange={(e) =>
-                    setConfigId(e.target.value ? Number(e.target.value) : null)
-                  }
-                  disabled={configsQuery.isLoading || !configsQuery.data?.length}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "__new__") {
+                      navigate("/screener/configs/new");
+                      return;
+                    }
+                    setConfigId(v ? Number(v) : null);
+                  }}
+                  disabled={configsQuery.isLoading}
                   className="border-border bg-background text-foreground focus-visible:ring-ring h-8 rounded-md border px-2 text-xs focus-visible:outline-none focus-visible:ring-2"
                 >
-                  {configsQuery.data?.length === 0 && <option>No configs</option>}
+                  {configsQuery.data?.length === 0 && (
+                    <option value="">No configs</option>
+                  )}
                   {configsQuery.data?.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
                       {c.is_active ? "" : " (inactive)"}
                     </option>
                   ))}
+                  <option value="__new__">+ New config…</option>
                 </select>
+                {configId !== null && (
+                  <Link
+                    to={`/screener/configs/${configId}`}
+                    title="Edit config"
+                    className="text-muted-foreground hover:bg-accent hover:text-foreground inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Link>
+                )}
                 <Link
                   to="/screener/configs"
                   title="Manage configs"
