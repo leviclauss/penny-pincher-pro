@@ -1,7 +1,9 @@
-"""Screener resource — configs, filter catalog, and per-day results.
+"""Screener resource — configs (read + write), filter catalog, per-day results.
 
-Read endpoints today; config write endpoints land in PR2 of the
-config-UI plan (``docs/planning/11-screener-config-ui.md``).
+Write endpoints (POST/PUT/DELETE/PATCH) implement PR2 of the config-UI
+plan (``docs/planning/11-screener-config-ui.md``). All validation rules
+live in ``_validate_write_body`` so the future config-editor can rely on
+the API enforcing the same constraints it does client-side.
 """
 
 from __future__ import annotations
@@ -10,16 +12,26 @@ from datetime import date as DateType
 from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
-from sqlalchemy import desc, func, select
+from fastapi import APIRouter, HTTPException, Query, Response
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import Session
 
+from core.logging import get_logger
 from db import get_session
 from db.models.market import Earnings, IndicatorDaily, Ticker
 from db.models.screener import FilterConfig, ScreenerResult
-from screener.filters.base import Filter
+from screener.filters.base import Filter, ParamSpec
 from screener.registry import FILTER_REGISTRY
+
+log = get_logger(__name__)
+
+# sector_concentration is a postprocessor (not in FILTER_REGISTRY) but the
+# pipeline accepts it inside ``filters[]`` with a ``max`` integer param. The
+# write endpoints therefore allow it as a known special-case until the
+# postprocessor catalog (doc 11 "Open questions") lands.
+_POSTPROCESSOR_FILTER_IDS = {"sector_concentration"}
+_SECTOR_CONCENTRATION_PARAMS = {"max"}
 
 router = APIRouter(prefix="/api/screener", tags=["screener"])
 
@@ -78,6 +90,28 @@ class ScreenerResultsResponse(BaseModel):
     rows: list[ScreenerResultRow]
 
 
+class FilterEntryIn(BaseModel):
+    id: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    required: bool = False
+
+
+class ScoringIn(BaseModel):
+    weights: dict[str, float] = Field(default_factory=dict)
+
+
+class FilterConfigWriteIn(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    description: str | None = None
+    is_active: bool = True
+    filters: list[FilterEntryIn] = Field(min_length=1)
+    scoring: ScoringIn = Field(default_factory=ScoringIn)
+
+
+class ActiveToggleIn(BaseModel):
+    is_active: bool
+
+
 @router.get("/filters", response_model=list[FilterCatalogEntry])
 def list_filter_catalog() -> list[FilterCatalogEntry]:
     """Filter catalog for the config-editor UI.
@@ -107,11 +141,107 @@ def get_config(config_id: int) -> FilterConfigDetail:
         config = session.get(FilterConfig, config_id)
         if config is None:
             raise HTTPException(status_code=404, detail=f"config not found: {config_id}")
-        summary = _summary_from_config(config)
-        return FilterConfigDetail(
-            **summary.model_dump(),
-            config_json=config.config_json or {},
+        return _to_detail(config)
+
+
+@router.post("/configs", response_model=FilterConfigDetail, status_code=201)
+def create_config(payload: FilterConfigWriteIn) -> FilterConfigDetail:
+    _validate_write_body(payload)
+    with get_session() as session:
+        if _name_taken(session, payload.name, exclude_id=None):
+            raise HTTPException(
+                status_code=409, detail=f"config name already exists: {payload.name}"
+            )
+        config = FilterConfig(
+            name=payload.name,
+            description=payload.description,
+            config_json=_build_config_json(payload),
+            is_active=payload.is_active,
         )
+        session.add(config)
+        session.commit()
+        session.refresh(config)
+        log.info("screener.configs.create", config_id=config.id, name=config.name)
+        return _to_detail(config)
+
+
+@router.put("/configs/{config_id}", response_model=FilterConfigDetail)
+def replace_config(config_id: int, payload: FilterConfigWriteIn) -> FilterConfigDetail:
+    _validate_write_body(payload)
+    with get_session() as session:
+        config = session.get(FilterConfig, config_id)
+        if config is None:
+            raise HTTPException(status_code=404, detail=f"config not found: {config_id}")
+        if _name_taken(session, payload.name, exclude_id=config_id):
+            raise HTTPException(
+                status_code=409, detail=f"config name already exists: {payload.name}"
+            )
+        config.name = payload.name
+        config.description = payload.description
+        config.is_active = payload.is_active
+        config.config_json = _build_config_json(payload)
+        session.commit()
+        session.refresh(config)
+        log.info("screener.configs.replace", config_id=config.id, name=config.name)
+        return _to_detail(config)
+
+
+@router.delete("/configs/{config_id}", status_code=204)
+def delete_config(config_id: int, cascade: bool = Query(default=False)) -> Response:
+    """Hard-delete a config.
+
+    Returns 409 if any ``screener_results`` rows reference the config —
+    the UI should suggest deactivation (PATCH ``/active``) instead. Pass
+    ``?cascade=true`` to force-delete the config and its results.
+    """
+    with get_session() as session:
+        config = session.get(FilterConfig, config_id)
+        if config is None:
+            raise HTTPException(status_code=404, detail=f"config not found: {config_id}")
+        result_count = session.execute(
+            select(func.count())
+            .select_from(ScreenerResult)
+            .where(ScreenerResult.config_id == config_id)
+        ).scalar_one()
+        if result_count > 0 and not cascade:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": (
+                        f"config {config_id} has {result_count} screener_results rows; "
+                        "deactivate via PATCH /active or pass ?cascade=true to force"
+                    ),
+                    "result_count": result_count,
+                },
+            )
+        if result_count > 0:
+            session.execute(delete(ScreenerResult).where(ScreenerResult.config_id == config_id))
+        session.delete(config)
+        session.commit()
+        log.info(
+            "screener.configs.delete",
+            config_id=config_id,
+            cascade=cascade,
+            results_deleted=result_count,
+        )
+    return Response(status_code=204)
+
+
+@router.patch("/configs/{config_id}/active", response_model=FilterConfigDetail)
+def patch_active(config_id: int, payload: ActiveToggleIn) -> FilterConfigDetail:
+    with get_session() as session:
+        config = session.get(FilterConfig, config_id)
+        if config is None:
+            raise HTTPException(status_code=404, detail=f"config not found: {config_id}")
+        config.is_active = payload.is_active
+        session.commit()
+        session.refresh(config)
+        log.info(
+            "screener.configs.active",
+            config_id=config_id,
+            is_active=config.is_active,
+        )
+        return _to_detail(config)
 
 
 _DATE_QUERY = Query(default=None, alias="date")
@@ -223,6 +353,167 @@ def _catalog_entry(filter_id: str, cls: type[Filter]) -> FilterCatalogEntry:
             for spec in cls.param_schema
         ],
     )
+
+
+def _to_detail(config: FilterConfig) -> FilterConfigDetail:
+    summary = _summary_from_config(config)
+    return FilterConfigDetail(
+        **summary.model_dump(),
+        config_json=config.config_json or {},
+    )
+
+
+def _name_taken(session: Session, name: str, *, exclude_id: int | None) -> bool:
+    stmt = select(FilterConfig.id).where(FilterConfig.name == name)
+    if exclude_id is not None:
+        stmt = stmt.where(FilterConfig.id != exclude_id)
+    return session.execute(stmt).scalar_one_or_none() is not None
+
+
+def _build_config_json(payload: FilterConfigWriteIn) -> dict[str, Any]:
+    """Persist the same JSON shape ``seed_filter_configs.py`` writes.
+
+    Keeping ``name`` / ``description`` mirrored inside ``config_json``
+    matches the seed script and lets the editor round-trip the seed
+    config without diffs.
+    """
+    return {
+        "name": payload.name,
+        "description": payload.description,
+        "filters": [_filter_entry_to_json(entry) for entry in payload.filters],
+        "scoring": {"weights": dict(payload.scoring.weights)},
+    }
+
+
+def _filter_entry_to_json(entry: FilterEntryIn) -> dict[str, Any]:
+    out: dict[str, Any] = {"id": entry.id}
+    if entry.params:
+        out["params"] = dict(entry.params)
+    if entry.required:
+        out["required"] = True
+    return out
+
+
+def _validate_write_body(payload: FilterConfigWriteIn) -> None:
+    """Reject configs the pipeline would refuse, with HTTP 400.
+
+    Mirrors ``screener.pipeline._parse_config`` — anything that would
+    cause a parse-time error there should fail here so we never persist
+    a config the screener will silently skip.
+    """
+    seen_ids: set[str] = set()
+    for entry in payload.filters:
+        if entry.id in seen_ids:
+            raise HTTPException(status_code=400, detail=f"duplicate filter id: {entry.id}")
+        seen_ids.add(entry.id)
+
+        if entry.id in _POSTPROCESSOR_FILTER_IDS:
+            _validate_postprocessor_params(entry.id, entry.params)
+            continue
+
+        cls = FILTER_REGISTRY.get(entry.id)
+        if cls is None:
+            raise HTTPException(status_code=400, detail=f"unknown filter id: {entry.id}")
+        _validate_params(entry.id, entry.params, cls.param_schema)
+
+    for fid, weight in payload.scoring.weights.items():
+        if fid not in seen_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"scoring.weights references filter not in filters[]: {fid}",
+            )
+        if fid in _POSTPROCESSOR_FILTER_IDS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"scoring.weights cannot weight postprocessor: {fid}",
+            )
+        cls = FILTER_REGISTRY[fid]
+        if not cls.scored:
+            raise HTTPException(
+                status_code=400,
+                detail=f"filter is not scored and cannot be weighted: {fid}",
+            )
+        if weight < 0:
+            raise HTTPException(
+                status_code=400, detail=f"scoring.weights[{fid}] must be non-negative"
+            )
+
+
+def _validate_params(
+    filter_id: str,
+    params: dict[str, Any],
+    schema: tuple[ParamSpec, ...],
+) -> None:
+    by_name = {spec.name: spec for spec in schema}
+    for key, value in params.items():
+        spec = by_name.get(key)
+        if spec is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"filter {filter_id}: unknown param {key!r}",
+            )
+        _check_param_value(filter_id, spec, value)
+
+
+def _check_param_value(filter_id: str, spec: ParamSpec, value: Any) -> None:
+    if spec.kind == "tier_set":
+        if not isinstance(value, list) or any(
+            isinstance(v, bool) or not isinstance(v, int) for v in value
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"filter {filter_id}.{spec.name}: must be list[int]",
+            )
+        for v in value:
+            if v not in (1, 2, 3):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"filter {filter_id}.{spec.name}: tier {v} not in [1, 2, 3]",
+                )
+        return
+
+    if spec.kind == "integer":
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise HTTPException(
+                status_code=400,
+                detail=f"filter {filter_id}.{spec.name}: must be integer",
+            )
+        numeric: float = float(value)
+    else:
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise HTTPException(
+                status_code=400,
+                detail=f"filter {filter_id}.{spec.name}: must be number",
+            )
+        numeric = float(value)
+
+    if spec.min is not None and numeric < spec.min:
+        raise HTTPException(
+            status_code=400,
+            detail=f"filter {filter_id}.{spec.name}: {numeric} below min {spec.min}",
+        )
+    if spec.max is not None and numeric > spec.max:
+        raise HTTPException(
+            status_code=400,
+            detail=f"filter {filter_id}.{spec.name}: {numeric} above max {spec.max}",
+        )
+
+
+def _validate_postprocessor_params(filter_id: str, params: dict[str, Any]) -> None:
+    if filter_id != "sector_concentration":
+        # Defensive — we only know one postprocessor today.
+        raise HTTPException(status_code=400, detail=f"unknown postprocessor: {filter_id}")
+    for key, value in params.items():
+        if key not in _SECTOR_CONCENTRATION_PARAMS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"sector_concentration: unknown param {key!r}",
+            )
+        if key == "max" and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+            raise HTTPException(
+                status_code=400,
+                detail="sector_concentration.max must be a positive integer",
+            )
 
 
 def _summary_from_config(config: FilterConfig) -> FilterConfigSummary:
