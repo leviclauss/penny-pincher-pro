@@ -83,7 +83,8 @@ backend/
       _dedup.py     Shared dedup checks (per-as_of, per-position-rule, per-symbol-per-day, morning-digest membership)
       _freshness.py Stale-bar guard for trigger jobs
   positions/        Wheel lifecycle + management rules
-  backtest/         Filter forward-return + full strategy sim (later)
+  backtest/         Filter forward-return + full strategy simulator
+                    pricing.py / portfolio.py / simulator.py for the wheel sim
   alembic/          Migrations
   scripts/          One-off scripts (seed_dev.py, etc.)
   tests/            Tests live alongside code; fixtures in tests/fixtures/
@@ -205,7 +206,8 @@ Schema decisions worth knowing:
 | List recent job runs | `curl http://localhost:8000/api/system/job-runs` |
 | Frontend dev server | `make run-frontend` |
 | Update indicator snapshot | `cd backend && pytest tests/test_indicators.py --snapshot-update` |
-| Run a filter backtest | `cd backend && python -m backtest.cli --config-id N --start YYYY-MM-DD --end YYYY-MM-DD` |
+| Run a filter backtest | `cd backend && python -m backtest.cli --mode filter --config-id N --start YYYY-MM-DD --end YYYY-MM-DD` |
+| Run a strategy backtest | `cd backend && python -m backtest.cli --mode strategy --config-id N --start YYYY-MM-DD --end YYYY-MM-DD --starting-capital 10000` |
 
 A typical first run from a clean clone:
 
@@ -383,16 +385,19 @@ in the payload*.
 5. Add tests under `backend/tests/` using a `FakeAlpacaClient`-style
    stub. Don't hit the network in tests.
 
-## How to run a filter backtest
+## How to run a backtest
 
-The filter backtest replays one screener config day-by-day across an NYSE
-trading-day calendar and records the realized forward return for each
-``(symbol, day)`` pass. v0 ships the candidate-quality eval only — the full
-strategy simulator (option pricing, equity curve, capital management) is
-deferred. See [`docs/planning/06-backtesting.md`](docs/planning/06-backtesting.md).
+Two modes share the same CLI. See
+[`docs/planning/06-backtesting.md`](docs/planning/06-backtesting.md) for the
+methodology.
+
+**Filter mode (default)** replays one screener config day-by-day across an
+NYSE trading-day calendar and records the realized forward return for each
+``(symbol, day)`` pass:
 
 ```bash
 cd backend && python -m backtest.cli \
+  --mode filter \
   --config-id 1 \
   --start 2024-01-01 --end 2025-01-01 \
   --forward-days 30                  # trading days from entry to exit close
@@ -403,6 +408,26 @@ Writes a row to ``backtest_runs`` and one row per pass to ``backtest_trades``
 (``leg_type="filter_pass"``). Filters that need an options chain mark
 themselves ineligible cleanly; unexpected per-symbol failures are logged
 (``backtest.symbol.error``) and skipped.
+
+**Strategy mode** runs the full wheel simulator with synthetic Black-Scholes
+pricing, capital management, and equity-curve writes:
+
+```bash
+cd backend && python -m backtest.cli \
+  --mode strategy \
+  --config-id 1 \
+  --start 2024-01-01 --end 2025-01-01 \
+  --starting-capital 10000 \
+  --max-concurrent-positions 5
+  # --delta-target 0.30 --dte-target 30 --profit-take-pct 0.5 --manage-dte 21
+```
+
+Writes one ``backtest_runs`` row, one ``backtest_trades`` row per simulated
+wheel leg (``csp_open`` / ``csp_close`` / ``csp_assigned`` / ``csp_expired``
+and the ``cc_*`` peers), and one ``backtest_equity`` row per trading day.
+Historical option chains aren't stored, so prices are synthetic — see
+[`backend/backtest/pricing.py`](backend/backtest/pricing.py) for the
+volatility-fallback chain (``iv_atm`` → ``hv_20`` → realized vol → 30%).
 
 ## CI
 
