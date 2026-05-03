@@ -58,6 +58,7 @@ class TelegramChannel:
         self._chat_id = settings.telegram_chat_id
         self._parse_mode = settings.telegram_parse_mode
         self._disable_preview = settings.telegram_disable_preview
+        self._web_base_url = settings.web_base_url
         self._client = client or httpx.Client(timeout=settings.telegram_timeout_s)
 
     @property
@@ -70,7 +71,12 @@ class TelegramChannel:
             return ChannelResult(False, None, "telegram_not_configured")
 
         try:
-            text = render(alert_type, payload, parse_mode=self._parse_mode)
+            text = render(
+                alert_type,
+                payload,
+                parse_mode=self._parse_mode,
+                web_base_url=self._web_base_url,
+            )
         except Exception as exc:
             log.error("telegram.render.failed", alert_type=alert_type, error=str(exc))
             return ChannelResult(False, None, f"render_failed: {exc}")

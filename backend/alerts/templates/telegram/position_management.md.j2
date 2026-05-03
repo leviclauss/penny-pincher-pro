@@ -1,0 +1,21 @@
+*Position Alert* — *{{ symbol | esc }}*
+
+{% if rule == "pct_max_profit" %}
+≥{{ "%.0f" | format(threshold * 100) | esc }}% profit captured \({{ "%.0f" | format(pct_max_profit * 100) | esc }}% of max\) — consider closing\.
+{% elif rule == "dte" %}
+≤{{ threshold | esc }} DTE reached \({{ dte | esc }} days left\) — roll or close\.
+{% elif rule == "delta_breach" %}
+Short put delta {{ "%.2f" | format(delta) | esc }} \(threshold {{ "%.2f" | format(threshold) | esc }}\) — assignment risk rising\.
+{% elif rule == "near_strike" %}
+Underlying {{ "%.2f" | format(underlying) | esc }} within {{ "%.1f" | format(diff_pct * 100) | esc }}% of strike {{ "%.2f" | format(strike) | esc }}\.
+{% elif rule == "cc_itm_short_dte" %}
+Covered call ITM at {{ dte | esc }} DTE — underlying {{ "%.2f" | format(underlying) | esc }} vs strike {{ "%.2f" | format(strike) | esc }}\. Roll or accept assignment\.
+{% elif rule == "stale_position" %}
+Open {{ days_open | esc }} days \(threshold {{ threshold | esc }}\) — review for action\.
+{% else %}
+Rule fired: {{ rule | esc }}\.
+{% endif %}
+{% if web_base_url %}
+
+[open]({{ web_base_url }}/positions/{{ position_id }})
+{% endif %}

@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     telegram_disable_preview: bool = True
     telegram_timeout_s: float = 10.0
 
+    # Base URL of the local web UI (e.g. Tailscale hostname). When set,
+    # alert templates render "Open" deep links into the relevant pages.
+    web_base_url: str = Field(default="")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

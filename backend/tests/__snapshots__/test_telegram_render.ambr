@@ -19,6 +19,13 @@
   • MSFT \(AMC\)
   '''
 # ---
+# name: test_render_position_management_snapshot
+  '''
+  *Position Alert* — *AAPL*
+  
+  ≥50% profit captured \(52% of max\) — consider closing\.
+  '''
+# ---
 # name: test_render_setup_triggered_snapshot
   '''
   *Setup Triggered* — *AAPL* \(2026\-05\-04\)

@@ -5,7 +5,7 @@
 {% if screener_hits %}
 *Screener hits* \({{ screener_hits | length | esc }}\)
 {% for hit in screener_hits %}
-• *{{ hit.symbol | esc }}* — {{ hit.config | esc }} \| close {{ "%.2f" | format(hit.close) | esc }} \| RSI {{ hit.rsi | esc }} \| IVp {{ hit.ivp | esc }} \| score {{ "%.2f" | format(hit.score) | esc }} \| earnings in {{ hit.next_earnings_days | esc }}d
+• *{{ hit.symbol | esc }}* — {{ hit.config | esc }} \| close {{ "%.2f" | format(hit.close) | esc }} \| RSI {{ hit.rsi | esc }} \| IVp {{ hit.ivp | esc }} \| score {{ "%.2f" | format(hit.score) | esc }} \| earnings in {{ hit.next_earnings_days | esc }}d{% if web_base_url %} \| [open]({{ web_base_url }}/tickers/{{ hit.symbol }}){% endif %}{{ '' }}
 {% endfor %}
 {% else %}
 _No screener hits today\._
@@ -14,13 +14,13 @@ _No screener hits today\._
 {% if earnings_today %}
 *Earnings today*
 {% for e in earnings_today %}
-• {{ e.symbol | esc }} \({{ e.when | esc }}\)
+• {{ e.symbol | esc }} \({{ e.when | esc }}\){% if web_base_url %} — [open]({{ web_base_url }}/tickers/{{ e.symbol }}){% endif %}{{ '' }}
 {% endfor %}
 {% endif %}
 {% if positions_attention %}
 
 *Positions needing attention*
 {% for p in positions_attention %}
-• {{ p.symbol | esc }} — {{ p.note | esc }}
+• {{ p.symbol | esc }} — {{ p.note | esc }}{% if web_base_url and p.position_id is defined %} — [open]({{ web_base_url }}/positions/{{ p.position_id }}){% endif %}{{ '' }}
 {% endfor %}
 {% endif %}

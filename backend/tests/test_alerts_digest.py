@@ -304,15 +304,16 @@ def test_evening_digest_includes_pnl_and_tomorrow_earnings(db: None) -> None:
         payload = build_evening_digest_payload(session, as_of=AS_OF)
 
     assert payload["earnings_tomorrow"] == [{"symbol": "AAPL", "when": "AMC"}]
-    assert payload["positions"] == [
-        {
-            "symbol": "AAPL",
-            "state": sm.STATE_SHORT_PUT,
-            "unrealized_pnl": 50.0,
-            "pct_max_profit": 0.16,
-            "dte": 30,
-        }
-    ]
+    assert len(payload["positions"]) == 1
+    assert payload["positions"][0] == {
+        "position_id": payload["positions"][0]["position_id"],
+        "symbol": "AAPL",
+        "state": sm.STATE_SHORT_PUT,
+        "unrealized_pnl": 50.0,
+        "pct_max_profit": 0.16,
+        "dte": 30,
+    }
+    assert isinstance(payload["positions"][0]["position_id"], int)
 
     rendered = render(EVENING_DIGEST, payload, parse_mode="MarkdownV2")
     assert "Evening Digest" in rendered
