@@ -29,6 +29,8 @@ from db import get_session
 from ingestion.alpaca_client import AlpacaClient, AlpacaDataError
 from ingestion.options import ChainSource
 from ingestion.options_client import AlpacaOptionsClient, AlpacaOptionsError
+from scheduler.jobs.backup import JOB_NAME as BACKUP_JOB_NAME
+from scheduler.jobs.backup import run_backup
 from scheduler.jobs.digest import EVENING_JOB_NAME as EVENING_DIGEST_JOB_NAME
 from scheduler.jobs.digest import MORNING_JOB_NAME as MORNING_DIGEST_JOB_NAME
 from scheduler.jobs.digest import run_evening_digest, run_morning_digest
@@ -149,6 +151,12 @@ def create_and_start() -> BackgroundScheduler:
             settings.scheduler_intraday_interval_minutes,
             settings.timezone,
         )
+    _register_backup(
+        scheduler,
+        settings.scheduler_backup_hour,
+        settings.scheduler_backup_minute,
+        settings.timezone,
+    )
     scheduler.start()
     log.info(
         "scheduler.started",
@@ -165,6 +173,8 @@ def create_and_start() -> BackgroundScheduler:
         evening_digest_minute=settings.scheduler_evening_digest_minute,
         intraday_enabled=settings.scheduler_intraday_enabled,
         intraday_interval_minutes=settings.scheduler_intraday_interval_minutes,
+        backup_hour=settings.scheduler_backup_hour,
+        backup_minute=settings.scheduler_backup_minute,
     )
     return scheduler
 
@@ -371,6 +381,32 @@ def _intraday_entry() -> None:
             chain_source=chain_source,
             market_calendar=calendar,
         )
+
+
+def _register_backup(scheduler: BackgroundScheduler, hour: int, minute: int, timezone: str) -> None:
+    cron = f"{minute} {hour} * * *"
+    schedule_human = f"Daily {hour:02d}:{minute:02d} {timezone}"
+    scheduler.add_job(
+        _backup_entry,
+        trigger=CronTrigger(hour=hour, minute=minute),
+        id=BACKUP_JOB_NAME,
+        replace_existing=True,
+    )
+    register_job(
+        BACKUP_JOB_NAME,
+        factory=lambda: _backup_entry,
+        description=(
+            "Nightly SQLite snapshot to backup_dir with retention pruning + optional off-site copy."
+        ),
+        cron=cron,
+        timezone=timezone,
+        schedule_human=schedule_human,
+    )
+
+
+def _backup_entry() -> None:
+    with get_session() as session:
+        run_backup(session)
 
 
 def build_alpaca_client() -> AlpacaClient | None:
