@@ -86,6 +86,11 @@ class ForwardReturnSummaryOut(BaseModel):
     rows: list[ForwardReturnRowOut]
 
 
+_CONFIG_ID_QUERY = Query(..., description="Filter config ID")
+_START_QUERY = Query(..., description="Start date (YYYY-MM-DD)")
+_END_QUERY = Query(..., description="End date (YYYY-MM-DD)")
+
+
 @router.get("/runs", response_model=list[BacktestRunOut])
 def list_runs() -> list[BacktestRunOut]:
     with get_session() as session:
@@ -168,9 +173,9 @@ def delete_run(run_id: int) -> Response:
 
 @router.get("/forward-returns", response_model=ForwardReturnSummaryOut)
 def forward_returns(
-    config_id: int = Query(..., description="Filter config ID"),
-    start: DateType = Query(..., description="Start date (YYYY-MM-DD)"),
-    end: DateType = Query(..., description="End date (YYYY-MM-DD)"),
+    config_id: int = _CONFIG_ID_QUERY,
+    start: DateType = _START_QUERY,
+    end: DateType = _END_QUERY,
 ) -> ForwardReturnSummaryOut:
     """Compute forward returns for historical screener picks."""
     if start > end:

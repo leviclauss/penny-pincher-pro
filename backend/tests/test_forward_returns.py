@@ -16,15 +16,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from alembic import command
-from backtest.forward_returns import (
-    ForwardReturnRow,
-    ForwardReturnSummary,
-    evaluate_forward_returns,
-)
+from backtest.forward_returns import evaluate_forward_returns
 from backtest.stats import hit_rate, safe_mean, safe_median
 from db.models.market import BarDaily, Ticker
 from db.models.screener import FilterConfig, ScreenerResult
-
 
 # --- Fixtures ---
 

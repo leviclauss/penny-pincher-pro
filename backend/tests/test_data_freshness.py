@@ -15,15 +15,14 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
-from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from alembic import command
 from alerts.templates.telegram_render import render
 from alerts.triggers.freshness_alert import (
     ALERT_TYPE,
-    DEFAULT_MAX_AGE_DAYS,
     build_freshness_alert_payload,
 )
 from db.models.market import BarDaily, Ticker
