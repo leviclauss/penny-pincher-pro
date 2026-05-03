@@ -1,7 +1,7 @@
 """backtest_trades: add meta JSON column
 
 Revision ID: c4f9a8d10b22
-Revises: e6d88fcf0798
+Revises: 1234f049eb54
 Create Date: 2026-05-03 12:00:00.000000
 
 """
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c4f9a8d10b22"
-down_revision: str | None = "e6d88fcf0798"
+down_revision: str | None = "1234f049eb54"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
