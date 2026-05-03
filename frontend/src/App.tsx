@@ -8,6 +8,7 @@ import { Positions } from "@/pages/Positions";
 import { Screener } from "@/pages/Screener";
 import { ScreenerConfigEditor } from "@/pages/ScreenerConfigEditor";
 import { ScreenerConfigs } from "@/pages/ScreenerConfigs";
+import { Settings } from "@/pages/Settings";
 import { TickerDetail } from "@/pages/TickerDetail";
 import { Tickers } from "@/pages/Tickers";
 
@@ -26,6 +27,7 @@ export function App(): JSX.Element {
           <Route path="positions" element={<Positions />} />
           <Route path="positions/:id" element={<PositionDetail />} />
           <Route path="jobs" element={<Jobs />} />
+          <Route path="settings" element={<Settings />} />
           <Route path="404" element={<NotFound />} />
           <Route path="*" element={<Navigate to="/404" replace />} />
         </Route>

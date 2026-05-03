@@ -46,11 +46,14 @@ Top-of-screen summary, refreshed on load:
 
 ### `/backtest` — Backtesting (covered in doc 06)
 
-### `/settings`
-- Alert preferences per type (channels, quiet hours)
-- Channel credentials (SMTP, ntfy.sh topic, etc.)
-- Data refresh status: last bar fetched, last options fetched, last earnings refresh
-- Manual "run ingestion now" button
+### `/settings` — shipped
+- Alert preferences per type (channels, quiet hours) — backed by
+  `GET/PUT /api/alerts/preferences`.
+- Channel status — `GET /api/system/channels` reports whether
+  `TELEGRAM_BOT_TOKEN` is configured.
+- Data refresh: last-run-at per registered job (from `GET /api/system/jobs`)
+  plus a "Run ingestion now" button that posts to
+  `/api/system/jobs/evening_pipeline/run`.
 
 ## Component library / design
 

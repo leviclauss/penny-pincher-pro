@@ -68,6 +68,10 @@ class JobInfoOut(BaseModel):
     last_run: JobRunOut | None
 
 
+class ChannelsStatus(BaseModel):
+    telegram: bool
+
+
 @router.get("/health", response_model=HealthStatus)
 def health() -> HealthStatus:
     settings = get_settings()
@@ -83,6 +87,12 @@ def health() -> HealthStatus:
         last_bar_date=last_bar,
         bar_count=int(bar_count),
     )
+
+
+@router.get("/channels", response_model=ChannelsStatus)
+def channels_status() -> ChannelsStatus:
+    settings = get_settings()
+    return ChannelsStatus(telegram=bool(settings.telegram_bot_token))
 
 
 @router.get("/job-runs", response_model=list[JobRunOut])

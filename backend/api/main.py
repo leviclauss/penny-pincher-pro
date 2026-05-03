@@ -18,6 +18,7 @@ from api import alerts as alerts_router
 from api import earnings as earnings_router
 from api import macro as macro_router
 from api import positions as positions_router
+from api import preferences as preferences_router
 from api import screener as screener_router
 from api import tickers as tickers_router
 from api.system import router as system_router
@@ -57,3 +58,4 @@ app.include_router(earnings_router.router)
 app.include_router(screener_router.router)
 app.include_router(alerts_router.router)
 app.include_router(positions_router.router)
+app.include_router(preferences_router.router)
