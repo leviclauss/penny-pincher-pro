@@ -15,6 +15,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 
 from api import alerts as alerts_router
+from api import backtest as backtest_router
 from api import earnings as earnings_router
 from api import macro as macro_router
 from api import positions as positions_router
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Penny Pincher Pro", version="0.1.0", lifespan=lifespan)
 app.include_router(system_router)
+app.include_router(backtest_router.router)
 app.include_router(tickers_router.router)
 app.include_router(macro_router.router)
 app.include_router(earnings_router.router)
