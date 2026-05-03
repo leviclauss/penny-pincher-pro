@@ -326,9 +326,15 @@ in the payload*.
    position-management (handled by `positions.management.fire_triggers`),
    intraday setup detection (future `triggers/setup.py`), etc.
 2. **Build the payload as a dict** keyed exactly the way the matching
-   Jinja template expects. Always include an ``as_of`` ISO date string
-   when the trigger represents a per-day event — that's what the dedup
-   helper (`alerts.triggers._dedup.already_dispatched_for_as_of`) keys on.
+   Jinja template expects. Pick the matching dedup helper:
+   - per-day events (digests, daily setup hits) → include an ``as_of``
+     ISO date string and use
+     `alerts.triggers._dedup.already_dispatched_for_as_of`.
+   - per-position lifecycle events (management rules) → include
+     ``position_id`` and ``rule`` and use
+     `alerts.triggers._dedup.already_dispatched_for_position_rule`.
+     Each new wheel cycle is a fresh ``Position`` row, so matching on
+     ``position_id`` alone naturally resets the lifecycle dedup.
 3. **Add a Telegram template** under
    `backend/alerts/templates/telegram/<alert_type>.md.j2`. Run every
    payload value through the `esc` filter — MarkdownV2 will silently

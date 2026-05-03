@@ -34,12 +34,13 @@ def run_position_management(
     with job_run(session, JOB_NAME) as ctx:
         snap = run_snapshot_pass(session, as_of=today)
         triggers = run_management_pass(session, config=config, today=today)
-        fired = fire_triggers(triggers)
+        fire_result = fire_triggers(session, triggers)
         ctx.set_result(
             positions=snap.positions_snapshotted,
             snapshots=snap.snapshots_written,
             skipped=snap.skipped_no_underlying,
             triggers=len(triggers),
-            alerts_fired=fired,
+            alerts_fired=fire_result.dispatched,
+            alerts_suppressed=fire_result.suppressed,
             as_of=today.isoformat(),
         )

@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 import alerts.dispatcher as dispatcher_module
+from alerts.triggers._dedup import already_dispatched_for_position_rule
 from core.logging import get_logger
 from core.time import utcnow
 from db.models.positions import Position, PositionLeg, PositionSnapshot
@@ -213,13 +214,38 @@ def trigger_to_payload(trigger: Trigger) -> dict[str, Any]:
     }
 
 
-def fire_triggers(triggers: Sequence[Trigger]) -> int:
-    """Best-effort fan-out to the alert dispatcher. Returns count dispatched."""
-    if not triggers:
-        return 0
+@dataclass(frozen=True, slots=True)
+class FireResult:
+    dispatched: int
+    suppressed: int
 
-    count = 0
+
+def fire_triggers(session: Session, triggers: Sequence[Trigger]) -> FireResult:
+    """Best-effort fan-out to the alert dispatcher with per-rule lifecycle dedup.
+
+    Suppresses any (position_id, rule) pair that has already produced an
+    ``alerts`` row — implements doc 03's "max 1 per condition per position
+    lifecycle" rule.
+    """
+    if not triggers:
+        return FireResult(dispatched=0, suppressed=0)
+
+    dispatched = 0
+    suppressed = 0
     for trigger in triggers:
+        if already_dispatched_for_position_rule(
+            session,
+            position_id=trigger.position_id,
+            rule=trigger.rule,
+            alert_type=ALERT_TYPE,
+        ):
+            log.info(
+                "positions.management.suppressed",
+                rule=trigger.rule,
+                position_id=trigger.position_id,
+            )
+            suppressed += 1
+            continue
         try:
             dispatcher_module.dispatch(ALERT_TYPE, trigger_to_payload(trigger))
         except Exception as exc:  # pragma: no cover — dispatcher already best-effort
@@ -230,8 +256,8 @@ def fire_triggers(triggers: Sequence[Trigger]) -> int:
                 error=str(exc),
             )
         else:
-            count += 1
-    return count
+            dispatched += 1
+    return FireResult(dispatched=dispatched, suppressed=suppressed)
 
 
 def _open_option_leg(session: Session, position: Position) -> PositionLeg | None:
