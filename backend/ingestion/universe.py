@@ -71,9 +71,7 @@ def sync_universe_tickers(
 
     existing: dict[str, Ticker] = {
         t.symbol: t
-        for t in session.execute(
-            select(Ticker).where(Ticker.symbol.in_(symbols))
-        ).scalars()
+        for t in session.execute(select(Ticker).where(Ticker.symbol.in_(symbols))).scalars()
     }
 
     inserted = 0

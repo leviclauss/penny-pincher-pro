@@ -356,9 +356,7 @@ def _open_long_shares(
 
 
 def test_open_long_shares_creates_position_and_leg(db: None) -> None:
-    pid = _open_long_shares(
-        symbol="msft", fees=1.25, notes="bought during dip"
-    )
+    pid = _open_long_shares(symbol="msft", fees=1.25, notes="bought during dip")
 
     with get_session() as session:
         position = session.get(Position, pid)

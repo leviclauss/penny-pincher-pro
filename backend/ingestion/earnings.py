@@ -1,15 +1,27 @@
 """Earnings calendar fetcher.
 
 Pulls the next ``EARNINGS_LOOKAHEAD_DAYS`` of earnings dates from Finnhub
-for each active watchlist ticker and upserts them into the ``earnings``
-table keyed by ``(symbol, earnings_date)``. Re-running on the same window
-is idempotent and refreshes ``time_of_day`` if Finnhub revised it.
+for each active ticker and upserts them into the ``earnings`` table keyed
+by ``(symbol, earnings_date)``. Re-running on the same window is
+idempotent and refreshes ``time_of_day`` if Finnhub revised it.
 
-We issue one call per symbol rather than a single bulk-calendar fetch:
-the bulk endpoint silently omits some upcoming reports (observed: MSTR
-2026-05-05 missing from bulk but present when queried by symbol), while
-per-symbol queries return the full schedule. With the 60 cpm free-tier
-limit and our small watchlist this is well within budget.
+Strategy (see docs/ops/api-rate-limits.md):
+
+- **Default: per-symbol query, throttled by ``FinnhubClient._RateLimiter``.**
+  At the free tier's 55 cpm cap, ~110 symbols take ~2 minutes nightly —
+  acceptable, and avoids the bulk endpoint's correctness pitfalls (next
+  point). The rate limiter is what actually solved the original
+  rate-limit problem; bulk was only a runtime optimization on top.
+- Optional bulk-first (``finnhub_earnings_use_bulk=True``): one bulk
+  ``calendar/earnings`` call for the window, filtered to the active set
+  in Python, with per-symbol fallback for symbols *entirely absent* from
+  bulk. Faster (1 req + N fallbacks) but **not safe to default**: bulk
+  silently drops some reports — observed with MSTR's near-term earnings
+  missing from bulk while the per-symbol query returned it correctly.
+  Worse, the fallback only catches *missing* symbols; if bulk returns a
+  *later* date for a symbol whose earlier report it dropped, we'd persist
+  the wrong "next earnings" date. Only enable after validating bulk vs
+  per-symbol for your universe.
 """
 
 from __future__ import annotations
@@ -23,6 +35,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
+from core.config import get_settings
 from core.logging import get_logger
 from core.time import utcnow
 from db.models.market import Earnings, Ticker
@@ -51,6 +64,8 @@ class EarningsFetchSummary:
     rows_written: int
     window_from: date
     window_to: date
+    bulk_used: bool = False
+    fallback_calls: int = 0
 
 
 def fetch_earnings(
@@ -60,16 +75,22 @@ def fetch_earnings(
     *,
     lookahead_days: int = DEFAULT_LOOKAHEAD_DAYS,
     as_of: date | None = None,
+    use_bulk: bool | None = None,
 ) -> EarningsFetchSummary:
     """Fetch + persist earnings for active tickers over the next ``lookahead_days``."""
     target = _resolve_symbols(session, symbols)
     today = as_of or _today_utc()
     to_date = today + timedelta(days=lookahead_days)
 
-    collected: list[EarningsRecord] = []
-    for sym in target:
-        records = client.get_earnings_calendar(from_date=today, to_date=to_date, symbol=sym)
-        collected.extend(r for r in records if r.symbol == sym)
+    bulk_enabled = use_bulk if use_bulk is not None else get_settings().finnhub_earnings_use_bulk
+
+    bulk_used = False
+    fallback_calls = 0
+    if bulk_enabled:
+        collected, fallback_calls = _fetch_bulk_then_fallback(client, target, today, to_date)
+        bulk_used = True
+    else:
+        collected = _fetch_per_symbol(client, target, today, to_date)
 
     fetched_at = utcnow()
     written = _upsert_earnings(session, collected, fetched_at) if collected else 0
@@ -82,13 +103,57 @@ def fetch_earnings(
         symbols=len(target),
         in_window=in_window,
         rows=written,
+        bulk_used=bulk_used,
+        fallback_calls=fallback_calls,
     )
     return EarningsFetchSummary(
         symbols_in_window=in_window,
         rows_written=written,
         window_from=today,
         window_to=to_date,
+        bulk_used=bulk_used,
+        fallback_calls=fallback_calls,
     )
+
+
+def _fetch_bulk_then_fallback(
+    client: EarningsSource,
+    target: list[str],
+    from_date: date,
+    to_date: date,
+) -> tuple[list[EarningsRecord], int]:
+    """One bulk call, then per-symbol top-ups for active symbols missing from it."""
+    target_set = set(target)
+    bulk_records = client.get_earnings_calendar(from_date=from_date, to_date=to_date)
+    collected = [r for r in bulk_records if r.symbol in target_set]
+
+    seen = {r.symbol for r in collected}
+    missing = sorted(target_set - seen)
+    fallback_calls = 0
+    for sym in missing:
+        extra = client.get_earnings_calendar(from_date=from_date, to_date=to_date, symbol=sym)
+        fallback_calls += 1
+        collected.extend(r for r in extra if r.symbol == sym)
+    if missing:
+        log.info(
+            "earnings.bulk_fallback",
+            missing_count=len(missing),
+            sample=missing[:5],
+        )
+    return collected, fallback_calls
+
+
+def _fetch_per_symbol(
+    client: EarningsSource,
+    target: list[str],
+    from_date: date,
+    to_date: date,
+) -> list[EarningsRecord]:
+    collected: list[EarningsRecord] = []
+    for sym in target:
+        records = client.get_earnings_calendar(from_date=from_date, to_date=to_date, symbol=sym)
+        collected.extend(r for r in records if r.symbol == sym)
+    return collected
 
 
 def _upsert_earnings(

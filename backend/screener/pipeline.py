@@ -349,9 +349,7 @@ def _persist_evaluations(
     if not evaluations:
         return 0
 
-    rows: list[dict[str, Any]] = [
-        _evaluation_to_row(as_of, config_id, e) for e in evaluations
-    ]
+    rows: list[dict[str, Any]] = [_evaluation_to_row(as_of, config_id, e) for e in evaluations]
 
     update_cols = (
         "passed",

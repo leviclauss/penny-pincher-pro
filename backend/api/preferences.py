@@ -90,9 +90,7 @@ def list_preferences() -> list[AlertPreferenceOut]:
     types = _known_alert_types()
     with get_session() as session:
         rows = (
-            session.execute(
-                select(AlertPreference).where(AlertPreference.alert_type.in_(types))
-            )
+            session.execute(select(AlertPreference).where(AlertPreference.alert_type.in_(types)))
             .scalars()
             .all()
         )

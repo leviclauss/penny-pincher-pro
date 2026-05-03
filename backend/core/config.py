@@ -39,6 +39,18 @@ class Settings(BaseSettings):
     finnhub_api_key: str = Field(default="")
     finnhub_base_url: str = "https://finnhub.io/api/v1"
     earnings_lookahead_days: int = 90
+    # Free tier ceiling is 60 cpm; default leaves a small safety margin.
+    finnhub_rate_limit_per_min: int = 55
+    # Bulk earnings fetch (1 req/run + per-symbol fallback for missing) is
+    # OFF by default: Finnhub's bulk calendar endpoint silently omits some
+    # upcoming reports (observed: MSTR's near-term report missing from bulk
+    # while the per-symbol query returned it correctly). The rate limiter
+    # above already keeps per-symbol within the free-tier budget, so the
+    # safer default is per-symbol everywhere. Flip to True only if you've
+    # validated bulk against per-symbol for your universe and accept the
+    # risk of an occasionally-wrong "next earnings" date. See
+    # docs/ops/api-rate-limits.md.
+    finnhub_earnings_use_bulk: bool = False
 
     yahoo_base_url: str = "https://query1.finance.yahoo.com"
     macro_lookback_days: int = 365
