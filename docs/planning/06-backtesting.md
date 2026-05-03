@@ -2,16 +2,34 @@
 
 ## Implementation status
 
-**v0 (shipped):** filter forward-return backtest only, exposed as a CLI
-(`python -m backtest.cli`). One row per evaluation day per passing symbol
-lands in `backtest_trades` (`leg_type="filter_pass"`); a `backtest_runs`
-row records the config + window. See
+**v0 (shipped):** filter forward-return backtest, exposed as a CLI
+(`python -m backtest.cli --mode filter`). One row per evaluation day per
+passing symbol lands in `backtest_trades` (`leg_type="filter_pass"`); a
+`backtest_runs` row records the config + window. See
 [`backend/backtest/filter_backtest.py`](../../backend/backtest/filter_backtest.py)
 and [`backend/backtest/forward_returns.py`](../../backend/backtest/forward_returns.py).
 
-**Deferred:** the full strategy simulator (cash-secured put → covered call
-lifecycle), Black-Scholes synthetic option pricing, equity-curve writes
-to `backtest_equity`, the read API (`/api/backtest/...`), and the UI page.
+**v1 (shipped):** full wheel strategy simulator (cash-secured put → covered
+call lifecycle) with synthetic Black-Scholes pricing, capital management,
+and equity-curve writes to `backtest_equity`. Run via
+`python -m backtest.cli --mode strategy --starting-capital 10000 ...`. See
+[`backend/backtest/simulator.py`](../../backend/backtest/simulator.py),
+[`backend/backtest/pricing.py`](../../backend/backtest/pricing.py), and
+[`backend/backtest/portfolio.py`](../../backend/backtest/portfolio.py).
+
+**v2 (shipped):** strategy-mode wiring across the read API and UI. The
+launcher (`POST /api/backtest/runs`) accepts `mode: "strategy"` plus a
+`strategy_params` payload, pre-creates the run row in `running` state, and
+dispatches the simulator via FastAPI background tasks (returning 202 +
+the run snapshot). Status flips to `completed` or `failed` (with
+`error_message` populated) when the background task finishes; clients
+poll `GET /api/backtest/runs/{id}`. Equity curve is exposed at
+`GET /api/backtest/runs/{id}/equity`. The `/backtest` page in the
+frontend offers a Filter/Strategy mode tab, a strategy-params form,
+auto-polling, an equity chart, and a leg-type-filterable trade table.
+
+**Deferred:** multi-contract sizing per position, sensitivity sliders on
+the UI, SPY benchmark overlay on the equity chart.
 
 ---
 

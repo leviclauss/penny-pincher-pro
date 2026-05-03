@@ -22,7 +22,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.logging import get_logger
-from db.models.backtest import BacktestRun, BacktestTrade
+from db.models.backtest import (
+    MODE_FILTER,
+    STATUS_COMPLETED,
+    STATUS_FAILED,
+    STATUS_RUNNING,
+    BacktestRun,
+    BacktestTrade,
+)
 from db.models.market import Ticker
 from db.models.screener import FilterConfig
 from screener.context import build_context
@@ -81,53 +88,80 @@ def run_filter_backtest(
     forward_days: int = 30,
     symbols: Sequence[str] | None = None,
     calendar_name: str = DEFAULT_CALENDAR,
+    existing_run_id: int | None = None,
 ) -> int:
     """Evaluate ``config_id`` on every trading day in ``[start_date, end_date]``.
 
-    Returns the new ``backtest_runs.id``. Trade rows for each filter pass are
-    written incrementally; the run row is written at the end so its ``params_json``
-    can include the actual symbol universe used.
+    Returns the ``backtest_runs.id``. When ``existing_run_id`` is provided the
+    row already exists in ``running`` state (the API pre-creates it so it can
+    return the id immediately and let the client poll); otherwise a new row is
+    created here. Either way the row is flipped to ``completed`` on success
+    or ``failed`` (with ``error_message`` set) on exception, and re-raised.
     """
     config_row = session.execute(
         select(FilterConfig).where(FilterConfig.id == config_id)
     ).scalar_one_or_none()
     if config_row is None:
+        if existing_run_id is not None:
+            _mark_failed(session, existing_run_id, f"unknown filter config id: {config_id}")
         raise ValueError(f"unknown filter config id: {config_id}")
     parsed = parse_config(config_row)
 
     universe = _load_universe(session, symbols)
     if not universe:
+        if existing_run_id is not None:
+            _mark_failed(session, existing_run_id, "no active tickers in the universe")
         raise ValueError("no active tickers in the universe")
 
     trading_days = _trading_days(calendar_name, start_date, end_date)
 
-    run = BacktestRun(
-        config_id=config_id,
-        start_date=start_date,
-        end_date=end_date,
-        starting_capital=DEFAULT_STARTING_CAPITAL,
-        params_json={
-            "forward_days": forward_days,
-            "symbols": list(universe),
-            "calendar": calendar_name,
-        },
-    )
-    session.add(run)
-    session.flush()  # populate run.id before writing trade rows
+    run: BacktestRun
+    if existing_run_id is None:
+        run = BacktestRun(
+            config_id=config_id,
+            mode=MODE_FILTER,
+            status=STATUS_RUNNING,
+            start_date=start_date,
+            end_date=end_date,
+            starting_capital=DEFAULT_STARTING_CAPITAL,
+            params_json={
+                "forward_days": forward_days,
+                "symbols": list(universe),
+                "calendar": calendar_name,
+            },
+        )
+        session.add(run)
+        session.flush()  # populate run.id before writing trade rows
+    else:
+        existing = session.get(BacktestRun, existing_run_id)
+        if existing is None:
+            raise ValueError(f"existing_run_id not found: {existing_run_id}")
+        run = existing
     run_id = run.id
 
     summary = BacktestSummary(run_id=run_id)
-    for day in trading_days:
-        stats = _evaluate_day(session, run_id, parsed, day, universe, forward_days, summary)
-        summary.days_evaluated += 1
-        log.info(
-            "backtest.day.done",
-            run_id=run_id,
-            date=day.isoformat(),
-            candidates=stats.candidates,
-            trades=stats.with_return,
-        )
+    try:
+        for day in trading_days:
+            stats = _evaluate_day(session, run_id, parsed, day, universe, forward_days, summary)
+            summary.days_evaluated += 1
+            log.info(
+                "backtest.day.done",
+                run_id=run_id,
+                date=day.isoformat(),
+                candidates=stats.candidates,
+                trades=stats.with_return,
+            )
+    except Exception as exc:
+        _mark_failed(session, run_id, f"{type(exc).__name__}: {exc}")
+        raise
 
+    run.status = STATUS_COMPLETED
+    run.error_message = None
+    run.params_json = {
+        "forward_days": forward_days,
+        "symbols": list(universe),
+        "calendar": calendar_name,
+    }
     session.commit()
     log.info(
         "backtest.run.summary",
@@ -139,6 +173,21 @@ def run_filter_backtest(
         win_rate=summary.win_rate,
     )
     return run_id
+
+
+def _mark_failed(session: Session, run_id: int, message: str) -> None:
+    """Flip a backtest_runs row to status='failed' and persist the error.
+
+    Rolls back any pending writes from the failed run before updating the row,
+    so the row reflects the error rather than partial mid-run state.
+    """
+    session.rollback()
+    run = session.get(BacktestRun, run_id)
+    if run is None:
+        return
+    run.status = STATUS_FAILED
+    run.error_message = message
+    session.commit()
 
 
 def _evaluate_day(

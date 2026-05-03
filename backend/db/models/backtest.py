@@ -6,11 +6,17 @@ from datetime import date as DateType
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.time import utcnow
 from db.session import Base
+
+MODE_FILTER = "filter"
+MODE_STRATEGY = "strategy"
+STATUS_RUNNING = "running"
+STATUS_COMPLETED = "completed"
+STATUS_FAILED = "failed"
 
 
 class BacktestRun(Base):
@@ -20,6 +26,11 @@ class BacktestRun(Base):
     config_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("filter_configs.id"), nullable=True
     )
+    mode: Mapped[str] = mapped_column(String(16), nullable=False, default=MODE_FILTER)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=STATUS_COMPLETED, index=True
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     start_date: Mapped[DateType] = mapped_column(Date, nullable=False)
     end_date: Mapped[DateType] = mapped_column(Date, nullable=False)
     starting_capital: Mapped[float] = mapped_column(Float, nullable=False)

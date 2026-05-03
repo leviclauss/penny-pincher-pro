@@ -342,35 +342,74 @@ export interface AlertListParams {
   offset?: number;
 }
 
+export type BacktestMode = "filter" | "strategy";
+export type BacktestStatus = "running" | "completed" | "failed";
+
 export interface BacktestRunOut {
   id: number;
   config_id: number | null;
   config_name: string | null;
+  mode: BacktestMode;
+  status: BacktestStatus;
+  error_message: string | null;
   start_date: string;
   end_date: string;
+  starting_capital: number;
   params_json: Record<string, unknown> | null;
   created_at: string;
   trade_count: number;
+  // Filter-mode metrics (null on strategy runs)
   win_rate: number | null;
   mean_return_pct: number | null;
   median_return_pct: number | null;
+  // Strategy-mode metrics (null on filter runs)
+  final_equity: number | null;
+  total_return_pct: number | null;
+  cycles_completed: number | null;
 }
 
 export interface BacktestTradeOut {
   id: number;
   symbol: string;
+  cycle_id: number | null;
+  leg_type: string;
   entry_date: string;
   exit_date: string | null;
+  strike: number | null;
+  expiration: string | null;
   entry_price: number;
   exit_price: number | null;
   outcome: string | null;
+  realized_pnl: number | null;
   realized_pnl_pct: number | null;
+  fees: number;
+}
+
+export interface BacktestEquityPoint {
+  date: string;
+  equity: number;
+  cash: number;
+  collateral_locked: number;
+  unrealized_pnl: number;
+}
+
+export interface StrategyParamsIn {
+  starting_capital?: number;
+  max_concurrent_positions?: number;
+  dte_target?: number;
+  delta_target?: number;
+  profit_take_pct?: number;
+  manage_dte?: number;
+  fee_per_contract?: number;
+  slippage_per_share?: number;
 }
 
 export interface BacktestRunIn {
+  mode?: BacktestMode;
   config_id: number;
   start_date: string;
   end_date: string;
   forward_days?: number;
   symbols?: string[] | null;
+  strategy_params?: StrategyParamsIn;
 }
