@@ -175,6 +175,94 @@ def test_patch_updates_notes(client: TestClient) -> None:
     assert resp.json()["notes"] == "watching earnings"
 
 
+def test_open_long_shares_endpoint(client: TestClient) -> None:
+    resp = client.post(
+        "/api/positions/long-shares",
+        json={
+            "symbol": "msft",
+            "shares": 200,
+            "cost_basis": 410.50,
+            "opened_on": "2026-04-15",
+            "acquisition_source": "open_market",
+            "fees": 1.25,
+            "notes": "bought during dip",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["symbol"] == "MSFT"
+    assert body["state"] == "long_shares"
+    assert body["acquisition_source"] == "open_market"
+    assert body["notes"] == "bought during dip"
+    assert len(body["legs"]) == 1
+    leg = body["legs"][0]
+    assert leg["leg_type"] == "shares"
+    assert leg["shares"] == 200
+    assert leg["entry_price"] == pytest.approx(410.50)
+    assert leg["fees"] == pytest.approx(1.25)
+
+
+def test_open_long_shares_rejects_unknown_acquisition_source(client: TestClient) -> None:
+    resp = client.post(
+        "/api/positions/long-shares",
+        json={
+            "symbol": "AAPL",
+            "shares": 100,
+            "cost_basis": 170.0,
+            "opened_on": "2026-05-01",
+            "acquisition_source": "inheritance",
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_open_covered_call_fresh_endpoint(client: TestClient) -> None:
+    resp = client.post(
+        "/api/positions/covered-call",
+        json={
+            "symbol": "aapl",
+            "shares": 200,
+            "cost_basis": 170.0,
+            "opened_on": "2026-05-01",
+            "acquisition_source": "assignment",
+            "expiration": "2026-06-19",
+            "strike": 180.0,
+            "contracts": 2,
+            "credit": 2.40,
+            "fees": 0.65,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["symbol"] == "AAPL"
+    assert body["state"] == "covered_call"
+    assert body["acquisition_source"] == "assignment"
+    legs_by_type = {leg["leg_type"]: leg for leg in body["legs"]}
+    assert legs_by_type["shares"]["shares"] == 200
+    assert legs_by_type["shares"]["entry_price"] == pytest.approx(170.0)
+    assert legs_by_type["covered_call"]["contracts"] == 2
+    assert legs_by_type["covered_call"]["strike"] == pytest.approx(180.0)
+    assert legs_by_type["covered_call"]["entry_price"] == pytest.approx(2.40)
+
+
+def test_open_covered_call_fresh_rejects_undercovered(client: TestClient) -> None:
+    resp = client.post(
+        "/api/positions/covered-call",
+        json={
+            "symbol": "AAPL",
+            "shares": 100,
+            "cost_basis": 170.0,
+            "opened_on": "2026-05-01",
+            "acquisition_source": "open_market",
+            "expiration": "2026-06-19",
+            "strike": 180.0,
+            "contracts": 2,
+            "credit": 2.40,
+        },
+    )
+    assert resp.status_code == 422
+
+
 def test_close_shares_manual_endpoint(client: TestClient) -> None:
     pid = client.post("/api/positions/short-put", json=_short_put_payload()).json()["id"]
     client.post(f"/api/positions/{pid}/assign-put", json={"assigned_on": "2026-06-19"})

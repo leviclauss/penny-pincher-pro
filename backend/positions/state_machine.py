@@ -51,6 +51,10 @@ OUTCOME_EXPIRED = "expired"
 OUTCOME_ASSIGNED = "assigned"
 OUTCOME_CALLED_AWAY = "called_away"
 
+ACQUISITION_OPEN_MARKET = "open_market"
+ACQUISITION_ASSIGNMENT = "assignment"
+_ALLOWED_ACQUISITION = {ACQUISITION_OPEN_MARKET, ACQUISITION_ASSIGNMENT}
+
 CONTRACT_MULTIPLIER = 100
 
 
@@ -88,6 +92,32 @@ class OpenCoveredCallInput:
     fees: float = 0.0
 
 
+@dataclass(frozen=True, slots=True)
+class OpenLongSharesInput:
+    symbol: str
+    shares: int
+    cost_basis: float
+    opened_on: DateType
+    acquisition_source: str
+    fees: float = 0.0
+    notes: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OpenCoveredCallFreshInput:
+    symbol: str
+    shares: int
+    cost_basis: float
+    opened_on: DateType
+    acquisition_source: str
+    expiration: DateType
+    strike: float
+    contracts: int
+    credit: float
+    fees: float = 0.0
+    notes: str | None = None
+
+
 def open_short_put(session: Session, payload: OpenShortPutInput) -> Position:
     """Create a brand-new wheel cycle in ``short_put`` state."""
     if payload.contracts <= 0:
@@ -122,6 +152,100 @@ def open_short_put(session: Session, payload: OpenShortPutInput) -> Position:
         fees=payload.fees,
     )
     session.add(leg)
+    session.flush()
+    return position
+
+
+def open_long_shares(session: Session, payload: OpenLongSharesInput) -> Position:
+    """Create a wheel cycle that begins in ``long_shares`` (shares already held)."""
+    if payload.shares <= 0:
+        raise InvalidLegError("shares must be positive")
+    if payload.cost_basis <= 0:
+        raise InvalidLegError("cost_basis must be positive")
+    if payload.acquisition_source not in _ALLOWED_ACQUISITION:
+        raise InvalidLegError(f"acquisition_source must be one of {sorted(_ALLOWED_ACQUISITION)}")
+
+    now = utcnow()
+    position = Position(
+        symbol=payload.symbol.upper(),
+        state=STATE_LONG_SHARES,
+        opened_at=now,
+        notes=payload.notes,
+        acquisition_source=payload.acquisition_source,
+    )
+    session.add(position)
+    session.flush()
+    position.cycle_id = position.id
+
+    leg = PositionLeg(
+        position_id=position.id,
+        leg_type=LEG_SHARES,
+        symbol=position.symbol,
+        shares=payload.shares,
+        entry_price=payload.cost_basis,
+        entry_date=payload.opened_on,
+        outcome=OUTCOME_OPEN,
+        fees=payload.fees,
+    )
+    session.add(leg)
+    session.flush()
+    return position
+
+
+def open_covered_call_fresh(session: Session, payload: OpenCoveredCallFreshInput) -> Position:
+    """Create a wheel cycle that begins in ``covered_call`` (shares + written call)."""
+    if payload.shares <= 0:
+        raise InvalidLegError("shares must be positive")
+    if payload.cost_basis <= 0:
+        raise InvalidLegError("cost_basis must be positive")
+    if payload.contracts <= 0:
+        raise InvalidLegError("contracts must be positive")
+    if payload.credit <= 0:
+        raise InvalidLegError("credit must be positive")
+    if payload.expiration < payload.opened_on:
+        raise InvalidLegError("expiration cannot precede opened_on")
+    if payload.contracts * CONTRACT_MULTIPLIER > payload.shares:
+        raise InvalidLegError("not enough shares to cover the call")
+    if payload.acquisition_source not in _ALLOWED_ACQUISITION:
+        raise InvalidLegError(f"acquisition_source must be one of {sorted(_ALLOWED_ACQUISITION)}")
+
+    now = utcnow()
+    position = Position(
+        symbol=payload.symbol.upper(),
+        state=STATE_COVERED_CALL,
+        opened_at=now,
+        notes=payload.notes,
+        acquisition_source=payload.acquisition_source,
+    )
+    session.add(position)
+    session.flush()
+    position.cycle_id = position.id
+
+    shares_leg = PositionLeg(
+        position_id=position.id,
+        leg_type=LEG_SHARES,
+        symbol=position.symbol,
+        shares=payload.shares,
+        entry_price=payload.cost_basis,
+        entry_date=payload.opened_on,
+        outcome=OUTCOME_OPEN,
+        fees=payload.fees,
+    )
+    session.add(shares_leg)
+
+    call_leg = PositionLeg(
+        position_id=position.id,
+        leg_type=LEG_COVERED_CALL,
+        symbol=position.symbol,
+        expiration=payload.expiration,
+        strike=payload.strike,
+        contracts=payload.contracts,
+        entry_price=payload.credit,
+        entry_date=payload.opened_on,
+        outcome=OUTCOME_OPEN,
+        fees=0.0,
+    )
+    session.add(call_leg)
     session.flush()
     return position
 

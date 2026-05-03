@@ -61,8 +61,12 @@ class PositionOut(BaseModel):
     opened_at: datetime
     closed_at: datetime | None
     notes: str | None
+    acquisition_source: str | None
     legs: list[LegOut]
     latest_snapshot: SnapshotOut | None
+
+
+AcquisitionSource = Literal["open_market", "assignment"]
 
 
 class OpenShortPutBody(BaseModel):
@@ -74,6 +78,23 @@ class OpenShortPutBody(BaseModel):
     opened_on: date
     fees: float = Field(default=0.0, ge=0)
     notes: str | None = None
+
+
+class OpenLongSharesBody(BaseModel):
+    symbol: str = Field(..., min_length=1, max_length=16)
+    shares: int = Field(..., gt=0)
+    cost_basis: float = Field(..., gt=0)
+    opened_on: date
+    acquisition_source: AcquisitionSource
+    fees: float = Field(default=0.0, ge=0)
+    notes: str | None = None
+
+
+class OpenCoveredCallFreshBody(OpenLongSharesBody):
+    expiration: date
+    strike: float = Field(..., gt=0)
+    contracts: int = Field(..., gt=0)
+    credit: float = Field(..., gt=0)
 
 
 class CloseDebitBody(BaseModel):
@@ -171,6 +192,7 @@ def _load(position_id: int) -> PositionOut:
             opened_at=position.opened_at,
             closed_at=position.closed_at,
             notes=position.notes,
+            acquisition_source=position.acquisition_source,
             legs=[],
             latest_snapshot=None,
         )
@@ -304,6 +326,7 @@ def list_positions(
             opened_at=p.opened_at,
             closed_at=p.closed_at,
             notes=p.notes,
+            acquisition_source=p.acquisition_source,
             legs=[_leg_to_out(leg) for leg in legs_by_pos.get(p.id, [])],
             latest_snapshot=None,
         )
@@ -338,6 +361,68 @@ def open_short_put_endpoint(body: OpenShortPutBody) -> PositionOut:
     except sm.InvalidLegError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     log.info("positions.open_short_put", id=position_id, symbol=body.symbol.upper())
+    return _load(position_id)
+
+
+@router.post("/long-shares", response_model=PositionOut, status_code=201)
+def open_long_shares_endpoint(body: OpenLongSharesBody) -> PositionOut:
+    try:
+        with get_session() as session:
+            position = sm.open_long_shares(
+                session,
+                sm.OpenLongSharesInput(
+                    symbol=body.symbol,
+                    shares=body.shares,
+                    cost_basis=body.cost_basis,
+                    opened_on=body.opened_on,
+                    acquisition_source=body.acquisition_source,
+                    fees=body.fees,
+                    notes=body.notes,
+                ),
+            )
+            session.flush()
+            position_id = position.id
+    except sm.InvalidLegError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    log.info(
+        "positions.open_long_shares",
+        id=position_id,
+        symbol=body.symbol.upper(),
+        acquisition_source=body.acquisition_source,
+    )
+    return _load(position_id)
+
+
+@router.post("/covered-call", response_model=PositionOut, status_code=201)
+def open_covered_call_fresh_endpoint(body: OpenCoveredCallFreshBody) -> PositionOut:
+    try:
+        with get_session() as session:
+            position = sm.open_covered_call_fresh(
+                session,
+                sm.OpenCoveredCallFreshInput(
+                    symbol=body.symbol,
+                    shares=body.shares,
+                    cost_basis=body.cost_basis,
+                    opened_on=body.opened_on,
+                    acquisition_source=body.acquisition_source,
+                    expiration=body.expiration,
+                    strike=body.strike,
+                    contracts=body.contracts,
+                    credit=body.credit,
+                    fees=body.fees,
+                    notes=body.notes,
+                ),
+            )
+            session.flush()
+            position_id = position.id
+    except sm.InvalidLegError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    log.info(
+        "positions.open_covered_call_fresh",
+        id=position_id,
+        symbol=body.symbol.upper(),
+        acquisition_source=body.acquisition_source,
+    )
     return _load(position_id)
 
 
