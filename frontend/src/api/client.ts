@@ -1,10 +1,20 @@
 import type {
+  AssignInput,
+  CalledAwayInput,
   ChartBar,
+  CloseDebitInput,
+  CloseSharesInput,
+  ExpireInput,
   HealthStatus,
   IVPoint,
   JobInfoOut,
   JobRunOut,
   MacroPoint,
+  OpenCoveredCallInput,
+  OpenShortPutInput,
+  PositionAttributionOut,
+  PositionOut,
+  PositionState,
   ScreenerConfigDetail,
   ScreenerConfigSummary,
   ScreenerResultsResponse,
@@ -150,3 +160,83 @@ export function fetchScreenerResults(
     `/api/screener/results${suffix ? `?${suffix}` : ""}`,
   );
 }
+
+export interface PositionsListParams {
+  state?: PositionState | null;
+  symbol?: string | null;
+}
+
+export function fetchPositions(params: PositionsListParams = {}): Promise<PositionOut[]> {
+  const qs = new URLSearchParams();
+  if (params.state) qs.set("state", params.state);
+  if (params.symbol) qs.set("symbol", params.symbol);
+  const suffix = qs.toString();
+  return getJson<PositionOut[]>(`/api/positions${suffix ? `?${suffix}` : ""}`);
+}
+
+export function fetchPosition(positionId: number): Promise<PositionOut> {
+  return getJson<PositionOut>(`/api/positions/${positionId}`);
+}
+
+export function fetchPositionAttribution(
+  positionId: number,
+): Promise<PositionAttributionOut> {
+  return getJson<PositionAttributionOut>(`/api/positions/${positionId}/attribution`);
+}
+
+export function openShortPut(input: OpenShortPutInput): Promise<PositionOut> {
+  return mutateJson<PositionOut>("POST", "/api/positions/short-put", input).then(
+    (r) => r as PositionOut,
+  );
+}
+
+export function patchPosition(
+  positionId: number,
+  patch: { notes?: string | null },
+): Promise<PositionOut> {
+  return mutateJson<PositionOut>("PATCH", `/api/positions/${positionId}`, patch).then(
+    (r) => r as PositionOut,
+  );
+}
+
+function postTransition<TBody>(
+  positionId: number,
+  action: string,
+  body: TBody,
+): Promise<PositionOut> {
+  return mutateJson<PositionOut>(
+    "POST",
+    `/api/positions/${positionId}/${action}`,
+    body,
+  ).then((r) => r as PositionOut);
+}
+
+export const closeShortPut = (id: number, body: CloseDebitInput): Promise<PositionOut> =>
+  postTransition(id, "close-put", body);
+
+export const expireShortPut = (id: number, body: ExpireInput): Promise<PositionOut> =>
+  postTransition(id, "expire-put", body);
+
+export const assignShortPut = (id: number, body: AssignInput): Promise<PositionOut> =>
+  postTransition(id, "assign-put", body);
+
+export const openCoveredCall = (
+  id: number,
+  body: OpenCoveredCallInput,
+): Promise<PositionOut> => postTransition(id, "covered-call", body);
+
+export const closeCoveredCall = (
+  id: number,
+  body: CloseDebitInput,
+): Promise<PositionOut> => postTransition(id, "close-call", body);
+
+export const expireCoveredCall = (
+  id: number,
+  body: ExpireInput,
+): Promise<PositionOut> => postTransition(id, "expire-call", body);
+
+export const calledAway = (id: number, body: CalledAwayInput): Promise<PositionOut> =>
+  postTransition(id, "called-away", body);
+
+export const closeShares = (id: number, body: CloseSharesInput): Promise<PositionOut> =>
+  postTransition(id, "close-shares", body);

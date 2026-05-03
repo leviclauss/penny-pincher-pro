@@ -23,6 +23,8 @@ services:
       - /app/node_modules
     ports:
       - "5173:5173"
+    environment:
+      - VITE_API_PROXY_TARGET=http://backend:8000
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     depends_on:
       - backend
