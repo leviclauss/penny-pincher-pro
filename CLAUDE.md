@@ -205,6 +205,7 @@ Schema decisions worth knowing:
 | List recent job runs | `curl http://localhost:8000/api/system/job-runs` |
 | Frontend dev server | `make run-frontend` |
 | Update indicator snapshot | `cd backend && pytest tests/test_indicators.py --snapshot-update` |
+| Run a filter backtest | `cd backend && python -m backtest.cli --config-id N --start YYYY-MM-DD --end YYYY-MM-DD` |
 
 A typical first run from a clean clone:
 
@@ -375,6 +376,27 @@ in the payload*.
 4. Wire it into `ingestion.pipeline` if it should be part of the daily run.
 5. Add tests under `backend/tests/` using a `FakeAlpacaClient`-style
    stub. Don't hit the network in tests.
+
+## How to run a filter backtest
+
+The filter backtest replays one screener config day-by-day across an NYSE
+trading-day calendar and records the realized forward return for each
+``(symbol, day)`` pass. v0 ships the candidate-quality eval only — the full
+strategy simulator (option pricing, equity curve, capital management) is
+deferred. See [`docs/planning/06-backtesting.md`](docs/planning/06-backtesting.md).
+
+```bash
+cd backend && python -m backtest.cli \
+  --config-id 1 \
+  --start 2024-01-01 --end 2025-01-01 \
+  --forward-days 30                  # trading days from entry to exit close
+  # --symbols AAPL,MSFT              # restrict universe (default = active watchlist)
+```
+
+Writes a row to ``backtest_runs`` and one row per pass to ``backtest_trades``
+(``leg_type="filter_pass"``). Filters that need an options chain mark
+themselves ineligible cleanly; unexpected per-symbol failures are logged
+(``backtest.symbol.error``) and skipped.
 
 ## CI
 

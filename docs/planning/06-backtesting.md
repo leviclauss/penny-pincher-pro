@@ -1,5 +1,20 @@
 # 06 — Backtesting
 
+## Implementation status
+
+**v0 (shipped):** filter forward-return backtest only, exposed as a CLI
+(`python -m backtest.cli`). One row per evaluation day per passing symbol
+lands in `backtest_trades` (`leg_type="filter_pass"`); a `backtest_runs`
+row records the config + window. See
+[`backend/backtest/filter_backtest.py`](../../backend/backtest/filter_backtest.py)
+and [`backend/backtest/forward_returns.py`](../../backend/backtest/forward_returns.py).
+
+**Deferred:** the full strategy simulator (cash-secured put → covered call
+lifecycle), Black-Scholes synthetic option pricing, equity-curve writes
+to `backtest_equity`, the read API (`/api/backtest/...`), and the UI page.
+
+---
+
 Two distinct backtests, often confused:
 
 1. **Filter backtest** — given historical filter values, how often did "passes" lead to favorable outcomes for the underlying over the next N days?

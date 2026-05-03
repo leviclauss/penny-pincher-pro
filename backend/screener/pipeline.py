@@ -152,6 +152,20 @@ def run_screener(
     return summary
 
 
+# Public re-exports for the backtest pipeline, which evaluates a single
+# config against historical data without going through ``run_screener``.
+ParsedConfig = _ParsedConfig
+SymbolEvaluation = _SymbolEvaluation
+
+
+def parse_config(row: FilterConfig) -> _ParsedConfig:
+    return _parse_config(row)
+
+
+def evaluate_symbol(ctx: FilterContext, config: _ParsedConfig) -> _SymbolEvaluation:
+    return _evaluate_symbol(ctx, config)
+
+
 def _load_active_configs(session: Session) -> list[_ParsedConfig]:
     rows = (
         session.execute(
