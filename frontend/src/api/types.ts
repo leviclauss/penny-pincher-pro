@@ -94,6 +94,25 @@ export interface MacroPoint {
   spy_above_200ema: boolean | null;
 }
 
+export interface AlertPreference {
+  alert_type: string;
+  channels: string[];
+  enabled: boolean;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+}
+
+export interface AlertPreferenceUpdate {
+  channels: string[];
+  enabled: boolean;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+}
+
+export interface ChannelsStatus {
+  telegram: boolean;
+}
+
 export interface UpcomingEarning {
   symbol: string;
   name: string | null;

@@ -10,6 +10,7 @@ import {
   ListChecks,
   Menu,
   Radar,
+  Settings as SettingsIcon,
   SlidersHorizontal,
   Sparkles,
   X,
@@ -33,6 +34,7 @@ const NAV: NavItem[] = [
   { to: "/positions", label: "Positions", icon: Briefcase },
   { to: "/alerts", label: "Alerts", icon: Bell },
   { to: "/jobs", label: "Jobs", icon: Clock },
+  { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
 function BrandMark(): JSX.Element {

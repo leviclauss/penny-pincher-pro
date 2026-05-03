@@ -1,8 +1,11 @@
 import type {
   AlertListParams,
   AlertOut,
+  AlertPreference,
+  AlertPreferenceUpdate,    
   AssignInput,
   CalledAwayInput,
+  ChannelsStatus,
   ChartBar,
   CloseDebitInput,
   CloseSharesInput,
@@ -155,6 +158,25 @@ export function triggerJob(name: string): Promise<TriggerResponse> {
     "POST",
     `/api/system/jobs/${encodeURIComponent(name)}/run`,
   ).then((r) => r as TriggerResponse);
+}
+
+export function fetchAlertPreferences(): Promise<AlertPreference[]> {
+  return getJson<AlertPreference[]>("/api/alerts/preferences");
+}
+
+export function updateAlertPreference(
+  alertType: string,
+  payload: AlertPreferenceUpdate,
+): Promise<AlertPreference> {
+  return mutateJson<AlertPreference>(
+    "PUT",
+    `/api/alerts/preferences/${encodeURIComponent(alertType)}`,
+    payload,
+  ).then((r) => r as AlertPreference);
+}
+
+export function fetchChannels(): Promise<ChannelsStatus> {
+  return getJson<ChannelsStatus>("/api/system/channels");
 }
 
 export function fetchScreenerConfigs(activeOnly = false): Promise<ScreenerConfigSummary[]> {
