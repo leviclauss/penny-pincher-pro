@@ -7,17 +7,21 @@ idempotent and refreshes ``time_of_day`` if Finnhub revised it.
 
 Strategy (see docs/ops/api-rate-limits.md):
 
-- Bulk-first: issue a single un-filtered ``calendar/earnings`` call for the
-  whole window, then filter to the active set in Python. This collapses
-  ~N requests/day into 1 — critical now that the universe scan brings the
-  active list to ~110 symbols (Finnhub free tier is 60 cpm).
-- Per-symbol fallback: the bulk endpoint historically dropped some
-  upcoming reports (observed: MSTR 2026-05-05 missing from bulk but
-  present when queried by symbol). For any active symbol not seen in the
-  bulk payload, we re-query by symbol — capped, throttled, and harmless
-  when the missing list is empty (the common case).
-- ``finnhub_earnings_use_bulk=False`` reverts to the original per-symbol
-  loop in case the bulk endpoint regresses badly.
+- **Default: per-symbol query, throttled by ``FinnhubClient._RateLimiter``.**
+  At the free tier's 55 cpm cap, ~110 symbols take ~2 minutes nightly —
+  acceptable, and avoids the bulk endpoint's correctness pitfalls (next
+  point). The rate limiter is what actually solved the original
+  rate-limit problem; bulk was only a runtime optimization on top.
+- Optional bulk-first (``finnhub_earnings_use_bulk=True``): one bulk
+  ``calendar/earnings`` call for the window, filtered to the active set
+  in Python, with per-symbol fallback for symbols *entirely absent* from
+  bulk. Faster (1 req + N fallbacks) but **not safe to default**: bulk
+  silently drops some reports — observed with MSTR's near-term earnings
+  missing from bulk while the per-symbol query returned it correctly.
+  Worse, the fallback only catches *missing* symbols; if bulk returns a
+  *later* date for a symbol whose earlier report it dropped, we'd persist
+  the wrong "next earnings" date. Only enable after validating bulk vs
+  per-symbol for your universe.
 """
 
 from __future__ import annotations

@@ -18,7 +18,7 @@ calls. The Finnhub free tier (60 cpm) was the first ceiling we hit.
 |---|---|---|---|---|---|
 | Bars | `ingestion/bars.py` (50/req batch) | 1 req | ~3 reqs | ~3 reqs | Alpaca 200/min |
 | Options chains | `ingestion/options.py` (1 req/symbol) | ~10 reqs | ~111 reqs | ~111 reqs | Alpaca 200/min |
-| Earnings calendar | `ingestion/earnings.py` | ~10 reqs (per-symbol) | ~111 reqs (per-symbol, **no throttle**) | **1 req (bulk) + N fallback only for missing** | **Finnhub 60/min** |
+| Earnings calendar | `ingestion/earnings.py` | ~10 reqs (per-symbol) | ~111 reqs (per-symbol, **no throttle**) | **~111 reqs (per-symbol, throttled to 55/min — ~2 min nightly)** | **Finnhub 60/min** |
 | Macro (VIX/VIX9D) | `ingestion/macro.py` (Yahoo) | 2 reqs | 2 reqs | 2 reqs | n/a |
 | Intraday pulse (off by default) | `scheduler/jobs/intraday.py` | watchlist only (`is_hidden=False`) | unchanged | unchanged | — |
 
@@ -28,23 +28,36 @@ excludes hidden tickers — but the evening pipeline resolvers don't. See
 
 ## What this branch ships
 
-1. **Bulk Finnhub earnings call** (`ingestion/earnings.py`)
-   - One `calendar/earnings` request for the whole 90-day window, then
-     filter to the active set in Python.
-   - Per-symbol top-up for any active symbol missing from the bulk
-     payload — preserves the correctness reason that motivated the
-     original per-symbol loop (MSTR was historically dropped from bulk).
-   - Toggle: `FINNHUB_EARNINGS_USE_BULK=false` to revert.
-
-2. **Sliding-window rate limiter inside `FinnhubClient`**
+1. **Sliding-window rate limiter inside `FinnhubClient`**
    (`ingestion/finnhub_client.py::_RateLimiter`)
    - Caps outbound calls at `FINNHUB_RATE_LIMIT_PER_MIN` (default 55,
-     just under the 60 cpm free-tier ceiling).
+     just under the 60 cpm free-tier ceiling). The limiter is what
+     actually unblocks us — once it's in place, the per-symbol loop is
+     safe again, just slower (~2 min wall-clock for ~110 symbols).
    - Defensive: even if a future change re-introduces a per-symbol burst
      pattern, we won't blow past the limit. Worst case, the call sleeps.
 
-Net effect on Finnhub: **111 reqs/day → 1 req/day** in the happy path,
-hard-capped at 55 cpm regardless of what the caller does.
+2. **Optional bulk Finnhub earnings call** (`ingestion/earnings.py`,
+   `FINNHUB_EARNINGS_USE_BULK`, **default off**)
+   - One `calendar/earnings` request for the whole 90-day window, then
+     filter to the active set in Python.
+   - Per-symbol top-up for any active symbol *entirely absent* from the
+     bulk payload.
+   - **Why default off:** Finnhub's bulk endpoint silently drops some
+     upcoming reports (observed: MSTR's near-term report missing from
+     bulk while the per-symbol query returned it correctly). The
+     "missing-symbol" fallback only catches symbols absent altogether —
+     if bulk returns a *later* date for a symbol whose earlier report it
+     dropped, we'd persist the wrong "next earnings" date and the screener
+     filter `no_earnings_in_window` would happily pass a ticker with an
+     imminent earnings event. Wheel strategies hate that.
+   - Trade-off: bulk turns ~110 reqs into 1 + N (where N = symbols
+     missing from bulk) and saves ~2 min nightly. Only enable after
+     validating bulk vs per-symbol for your universe.
+
+Net effect on Finnhub: rate-limit problem solved by the limiter alone.
+Per-symbol stays the default for correctness; bulk is an opt-in
+performance lever once you've validated it for your symbol set.
 
 ## Why we didn't go further (yet)
 
@@ -93,5 +106,5 @@ In rough priority order:
 | Setting | Default | What it does |
 |---|---|---|
 | `FINNHUB_RATE_LIMIT_PER_MIN` | `55` | Sliding-window cap inside `FinnhubClient`. Set to `60` to use the full free-tier budget; lower if you also use the same key elsewhere. |
-| `FINNHUB_EARNINGS_USE_BULK` | `true` | When true, fetch earnings via 1 bulk call + per-symbol fallback. Set false to revert to the original per-symbol loop. |
+| `FINNHUB_EARNINGS_USE_BULK` | `false` | Off by default — bulk silently omits some reports (see "What this branch ships"). When true, 1 bulk call + per-symbol fallback only for symbols entirely missing. |
 | `FINNHUB_API_KEY` | unset | Earnings ingestion silently no-ops without a key. |
