@@ -17,9 +17,19 @@ and equity-curve writes to `backtest_equity`. Run via
 [`backend/backtest/pricing.py`](../../backend/backtest/pricing.py), and
 [`backend/backtest/portfolio.py`](../../backend/backtest/portfolio.py).
 
-**Deferred:** the read API extension (e.g. `POST /api/backtest/runs?mode=strategy`
-plus detail endpoints surfacing equity curves), the `/backtest` UI page, and
-multi-contract sizing per position.
+**v2 (shipped):** strategy-mode wiring across the read API and UI. The
+launcher (`POST /api/backtest/runs`) accepts `mode: "strategy"` plus a
+`strategy_params` payload, pre-creates the run row in `running` state, and
+dispatches the simulator via FastAPI background tasks (returning 202 +
+the run snapshot). Status flips to `completed` or `failed` (with
+`error_message` populated) when the background task finishes; clients
+poll `GET /api/backtest/runs/{id}`. Equity curve is exposed at
+`GET /api/backtest/runs/{id}/equity`. The `/backtest` page in the
+frontend offers a Filter/Strategy mode tab, a strategy-params form,
+auto-polling, an equity chart, and a leg-type-filterable trade table.
+
+**Deferred:** multi-contract sizing per position, sensitivity sliders on
+the UI, SPY benchmark overlay on the equity chart.
 
 ---
 

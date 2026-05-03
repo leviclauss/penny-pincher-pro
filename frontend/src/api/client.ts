@@ -4,6 +4,7 @@ import type {
   AlertPreference,
   AlertPreferenceUpdate,
   AssignInput,
+  BacktestEquityPoint,
   BacktestRunIn,
   BacktestRunOut,
   BacktestTradeOut,
@@ -375,6 +376,14 @@ export function fetchBacktestRuns(): Promise<BacktestRunOut[]> {
 
 export function fetchBacktestTrades(runId: number): Promise<BacktestTradeOut[]> {
   return getJson<BacktestTradeOut[]>(`/api/backtest/runs/${runId}/trades`);
+}
+
+export function fetchBacktestEquity(runId: number): Promise<BacktestEquityPoint[]> {
+  return getJson<BacktestEquityPoint[]>(`/api/backtest/runs/${runId}/equity`);
+}
+
+export function fetchBacktestRun(runId: number): Promise<BacktestRunOut> {
+  return getJson<BacktestRunOut>(`/api/backtest/runs/${runId}`);
 }
 
 export function runBacktest(input: BacktestRunIn): Promise<BacktestRunOut> {

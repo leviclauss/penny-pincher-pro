@@ -145,8 +145,10 @@ def test_run_writes_run_equity_and_trade_rows(session: Session) -> None:
     run = session.execute(select(BacktestRun).where(BacktestRun.id == summary.run_id)).scalar_one()
     assert run.config_id == config_id
     assert run.starting_capital == 50_000.0
+    assert run.mode == "strategy"
+    assert run.status == "completed"
+    assert run.error_message is None
     assert run.params_json is not None
-    assert run.params_json["mode"] == "strategy"
     assert run.params_json["max_concurrent_positions"] == 2
 
     equity_rows = (

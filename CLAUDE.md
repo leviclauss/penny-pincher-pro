@@ -238,6 +238,12 @@ file per resource under `backend/api/`:
 | `GET /api/alerts/types` | `api/alerts.py` | distinct alert types observed in history |
 | `POST /api/alerts/{id}/ack` | `api/alerts.py` | toggle `user_acked` (body `{"acked": bool}`) |
 | `POST /api/alerts/test` | `api/alerts.py` | local-curl helper that fires a fixture payload through the dispatcher |
+| `GET /api/backtest/runs` | `api/backtest.py` | run history (filter + strategy), newest first |
+| `POST /api/backtest/runs` | `api/backtest.py` | launcher; body `{mode:"filter"\|"strategy", config_id, start_date, end_date, ...}`. Returns 202; row starts in `status="running"` and the simulator runs in a background task |
+| `GET /api/backtest/runs/{id}` | `api/backtest.py` | poll for `status` flips (`running` → `completed`/`failed`) |
+| `GET /api/backtest/runs/{id}/trades` | `api/backtest.py` | filter rows expose `realized_pnl_pct`; strategy rows expose dollar `realized_pnl` + `leg_type`/`cycle_id`/`strike`/`expiration` |
+| `GET /api/backtest/runs/{id}/equity` | `api/backtest.py` | equity-curve time series (strategy mode only; empty list for filter runs) |
+| `DELETE /api/backtest/runs/{id}` | `api/backtest.py` | cascades to trades + equity rows |
 
 Range tokens accepted by chart/IV/macro endpoints: `1m`, `3m`, `6m`,
 `1y`, `2y`, `5y`, `max` (subset varies by endpoint).
@@ -255,6 +261,11 @@ Routes shipped (read-only, mobile-responsive shell with sidebar nav):
   lines, RSI(14) sub-panel, IV ATM history.
 - `/alerts` — Chronological alert feed with type/symbol/date filters,
   payload-inspection dialog, per-row ack toggle.
+- `/backtest` — Filter/Strategy mode tabs. Strategy form exposes the
+  `StrategyParams` knobs (capital, max concurrency, DTE, delta,
+  profit-take, manage-DTE, fees, slippage). Past-runs table polls
+  every 2s while any row is `running`; expanding a row shows the
+  equity curve (strategy) and a leg-type-filterable trade table.
 
 Stack additions:
 - `react-router-dom` v6 for routing.

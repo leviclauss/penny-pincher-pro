@@ -60,7 +60,15 @@ from backtest.pricing import (
     select_put_strike,
 )
 from core.logging import get_logger
-from db.models.backtest import BacktestEquity, BacktestRun, BacktestTrade
+from db.models.backtest import (
+    MODE_STRATEGY,
+    STATUS_COMPLETED,
+    STATUS_FAILED,
+    STATUS_RUNNING,
+    BacktestEquity,
+    BacktestRun,
+    BacktestTrade,
+)
 from db.models.market import BarDaily, IndicatorDaily, Ticker
 from db.models.screener import FilterConfig
 from screener.context import build_context
@@ -162,37 +170,57 @@ def run_strategy_backtest(
     params: StrategyParams,
     symbols: Sequence[str] | None = None,
     calendar_name: str = DEFAULT_CALENDAR,
+    existing_run_id: int | None = None,
 ) -> StrategyRunSummary:
-    """Run the wheel simulator and persist results."""
+    """Run the wheel simulator and persist results.
+
+    See ``run_filter_backtest`` for the ``existing_run_id`` / status flow
+    contract — same pre-create / completed / failed semantics.
+    """
     config_row = session.execute(
         select(FilterConfig).where(FilterConfig.id == config_id)
     ).scalar_one_or_none()
     if config_row is None:
+        if existing_run_id is not None:
+            _mark_failed(session, existing_run_id, f"unknown filter config id: {config_id}")
         raise ValueError(f"unknown filter config id: {config_id}")
     parsed = parse_config(config_row)
 
     universe = _load_universe(session, symbols)
     if not universe:
+        if existing_run_id is not None:
+            _mark_failed(session, existing_run_id, "no active tickers in the universe")
         raise ValueError("no active tickers in the universe")
 
     trading_days = _trading_days(calendar_name, start_date, end_date)
     if not trading_days:
-        raise ValueError(f"no trading days in {start_date.isoformat()}..{end_date.isoformat()}")
+        message = f"no trading days in {start_date.isoformat()}..{end_date.isoformat()}"
+        if existing_run_id is not None:
+            _mark_failed(session, existing_run_id, message)
+        raise ValueError(message)
 
-    run = BacktestRun(
-        config_id=config_id,
-        start_date=start_date,
-        end_date=end_date,
-        starting_capital=params.starting_capital,
-        params_json={
-            "mode": "strategy",
-            "symbols": list(universe),
-            "calendar": calendar_name,
-            **params.to_dict(),
-        },
-    )
-    session.add(run)
-    session.flush()
+    run: BacktestRun
+    if existing_run_id is None:
+        run = BacktestRun(
+            config_id=config_id,
+            mode=MODE_STRATEGY,
+            status=STATUS_RUNNING,
+            start_date=start_date,
+            end_date=end_date,
+            starting_capital=params.starting_capital,
+            params_json={
+                "symbols": list(universe),
+                "calendar": calendar_name,
+                **params.to_dict(),
+            },
+        )
+        session.add(run)
+        session.flush()
+    else:
+        existing = session.get(BacktestRun, existing_run_id)
+        if existing is None:
+            raise ValueError(f"existing_run_id not found: {existing_run_id}")
+        run = existing
     run_id = run.id
 
     portfolio = Portfolio(cash=params.starting_capital, starting_capital=params.starting_capital)
@@ -204,29 +232,33 @@ def run_strategy_backtest(
         universe=universe,
     )
 
-    for day in trading_days:
-        _step_day(session, state, day)
+    try:
+        for day in trading_days:
+            _step_day(session, state, day)
 
-    # Flush still-open legs so the UI can render in-flight positions.
-    for opt in list(portfolio.options):
-        state.pending.append(
-            _PendingTrade(
-                cycle_id=opt.cycle_id,
-                symbol=opt.symbol,
-                leg_type=_open_leg_label(opt.leg_type),
-                entry_date=opt.entry_date,
-                exit_date=None,
-                strike=opt.strike,
-                expiration=opt.expiration,
-                entry_price=opt.entry_premium,
-                exit_price=None,
-                outcome="open",
-                realized_pnl=None,
-                fees=opt.fees_open,
+        # Flush still-open legs so the UI can render in-flight positions.
+        for opt in list(portfolio.options):
+            state.pending.append(
+                _PendingTrade(
+                    cycle_id=opt.cycle_id,
+                    symbol=opt.symbol,
+                    leg_type=_open_leg_label(opt.leg_type),
+                    entry_date=opt.entry_date,
+                    exit_date=None,
+                    strike=opt.strike,
+                    expiration=opt.expiration,
+                    entry_price=opt.entry_premium,
+                    exit_price=None,
+                    outcome="open",
+                    realized_pnl=None,
+                    fees=opt.fees_open,
+                )
             )
-        )
 
-    _flush_trades(session, run_id, state.pending)
+        _flush_trades(session, run_id, state.pending)
+    except Exception as exc:
+        _mark_failed(session, run_id, f"{type(exc).__name__}: {exc}")
+        raise
 
     final_equity = portfolio.cash + sum(
         lot.shares * (state.last_known_spot.get(lot.symbol) or lot.cost_basis)
@@ -240,6 +272,13 @@ def run_strategy_backtest(
         total_return_pct=(final_equity - params.starting_capital) / params.starting_capital * 100.0,
         cycles_completed=state.cycles_completed,
     )
+    run.status = STATUS_COMPLETED
+    run.error_message = None
+    run.params_json = {
+        "symbols": list(universe),
+        "calendar": calendar_name,
+        **params.to_dict(),
+    }
     session.commit()
     log.info(
         "backtest.strategy.summary",
@@ -250,6 +289,17 @@ def run_strategy_backtest(
         return_pct=round(summary.total_return_pct, 2),
     )
     return summary
+
+
+def _mark_failed(session: Session, run_id: int, message: str) -> None:
+    """Roll back partial writes and flip the run row to status='failed'."""
+    session.rollback()
+    run = session.get(BacktestRun, run_id)
+    if run is None:
+        return
+    run.status = STATUS_FAILED
+    run.error_message = message
+    session.commit()
 
 
 @dataclass(slots=True)
