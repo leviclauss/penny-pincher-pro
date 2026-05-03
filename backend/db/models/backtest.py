@@ -59,6 +59,11 @@ class BacktestTrade(Base):
     outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
     realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
     fees: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    # Per-leg diagnostic detail surfaced in the UI: contracts, shares,
+    # premium, slippage, spot/sigma at entry+exit, intrinsic, cost basis,
+    # P/L breakdown, and a free-form ``explanation`` string. Populated by
+    # the simulator at each emission point; ``None`` for filter-mode rows.
+    meta: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class BacktestEquity(Base):

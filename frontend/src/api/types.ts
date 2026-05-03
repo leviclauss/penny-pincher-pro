@@ -390,6 +390,7 @@ export interface BacktestTradeOut {
   realized_pnl: number | null;
   realized_pnl_pct: number | null;
   fees: number;
+  meta: Record<string, unknown> | null;
 }
 
 export interface BacktestEquityPoint {

@@ -37,9 +37,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/Table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/Dialog";
 import { EquityChart } from "@/components/charts/EquityChart";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import type { BacktestTradeOut } from "@/api/types";
 
 function fmt(value: number | null | undefined, digits = 2): string {
   if (value == null) return "—";
@@ -136,6 +144,301 @@ const STRATEGY_LEG_TYPES = [
   "share_sold",
 ] as const;
 
+// Keys that should be rendered as money rather than raw numbers in the
+// diagnostic table. Matched as substrings so e.g. ``premium_total_credit``
+// and ``close_total_debit`` both pick up money formatting.
+const MONEY_KEY_HINTS = [
+  "premium_total",
+  "premium_received",
+  "buyback",
+  "fees",
+  "slippage_total",
+  "close_total",
+  "collateral",
+  "cost_basis_total",
+  "share_unrealized",
+  "proceeds",
+  "net",
+];
+
+const PERCENT_KEY_HINTS = ["delta_target", "filter_score"];
+
+function isMoneyKey(key: string): boolean {
+  return MONEY_KEY_HINTS.some((hint) => key.includes(hint));
+}
+
+function isPercentLikeKey(key: string): boolean {
+  return PERCENT_KEY_HINTS.some((hint) => key.includes(hint));
+}
+
+function formatMetaValue(key: string, value: unknown): string {
+  if (value == null) return "—";
+  if (typeof value === "number") {
+    if (isMoneyKey(key)) return fmtMoney(value);
+    if (isPercentLikeKey(key)) return value.toFixed(4);
+    if (Number.isInteger(value)) return value.toString();
+    return value.toFixed(4);
+  }
+  if (typeof value === "string") return value;
+  if (typeof value === "boolean") return value ? "true" : "false";
+  return JSON.stringify(value);
+}
+
+function PnlBreakdownTable({
+  breakdown,
+}: {
+  breakdown: Record<string, unknown>;
+}): JSX.Element {
+  const entries = Object.entries(breakdown);
+  return (
+    <div className="border-border bg-muted/40 rounded-md border">
+      <table className="w-full text-sm">
+        <tbody>
+          {entries.map(([k, v], i) => {
+            const isNet = k === "net";
+            const num = typeof v === "number" ? v : null;
+            return (
+              <tr
+                key={k}
+                className={cn(
+                  i < entries.length - 1 && "border-border/60 border-b",
+                  isNet && "bg-muted/60 font-semibold",
+                )}
+              >
+                <td className="text-muted-foreground px-3 py-1.5 font-mono text-xs uppercase">
+                  {k}
+                </td>
+                <td
+                  className={cn(
+                    "px-3 py-1.5 text-right font-mono",
+                    num != null &&
+                      (num >= 0 ? "text-emerald-500" : "text-red-500"),
+                  )}
+                >
+                  {num != null
+                    ? `${num >= 0 ? "+" : ""}${fmtMoney(num)}`
+                    : String(v)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TradeDetailDialog({
+  trade,
+  cycleTrades,
+  onClose,
+}: {
+  trade: BacktestTradeOut;
+  cycleTrades: BacktestTradeOut[];
+  onClose: () => void;
+}): JSX.Element {
+  const meta = trade.meta ?? {};
+  const breakdown = (meta.pnl_breakdown ?? null) as
+    | Record<string, unknown>
+    | null;
+  const explanation = typeof meta.explanation === "string" ? meta.explanation : null;
+
+  // Show all meta keys except the two we render specially (pnl_breakdown,
+  // explanation) and ``lots`` (rendered as a sub-table when present).
+  const diagnostic = Object.entries(meta).filter(
+    ([k]) => k !== "pnl_breakdown" && k !== "explanation" && k !== "lots",
+  );
+  const lots = (meta.lots ?? null) as
+    | Array<Record<string, unknown>>
+    | null;
+
+  const siblings = cycleTrades.filter((t) => t.id !== trade.id);
+
+  return (
+    <Dialog open onOpenChange={(o) => (o ? undefined : onClose())}>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span className="font-mono">{trade.symbol}</span>
+            <span className="text-muted-foreground">·</span>
+            <span className="font-mono text-sm">{trade.leg_type}</span>
+            {trade.cycle_id != null && (
+              <Badge variant="outline" className="ml-auto">
+                cycle #{trade.cycle_id}
+              </Badge>
+            )}
+          </DialogTitle>
+          <DialogDescription>
+            {formatDate(trade.entry_date)}
+            {trade.exit_date ? ` → ${formatDate(trade.exit_date)}` : " (open)"}
+            {trade.outcome ? ` · ${trade.outcome}` : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-5">
+          {explanation && (
+            <div className="border-border bg-muted/30 rounded-md border px-3 py-2 text-sm leading-relaxed">
+              {explanation}
+            </div>
+          )}
+
+          {breakdown && (
+            <div>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider">
+                P&L breakdown
+              </h3>
+              <PnlBreakdownTable breakdown={breakdown} />
+              {trade.realized_pnl != null && (
+                <div className="text-muted-foreground mt-2 text-xs">
+                  Persisted realized_pnl on this row: {fmtMoney(trade.realized_pnl)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {diagnostic.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider">
+                Diagnostic detail
+              </h3>
+              <div className="border-border rounded-md border">
+                <table className="w-full text-sm">
+                  <tbody>
+                    {diagnostic.map(([k, v], i) => (
+                      <tr
+                        key={k}
+                        className={cn(
+                          i < diagnostic.length - 1 && "border-border/60 border-b",
+                        )}
+                      >
+                        <td className="text-muted-foreground px-3 py-1.5 font-mono text-xs">
+                          {k}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono">
+                          {formatMetaValue(k, v)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {lots && lots.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider">
+                Share lots delivered
+              </h3>
+              <div className="border-border rounded-md border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-border/60 text-muted-foreground border-b text-xs uppercase">
+                      <th className="px-3 py-1.5 text-left">Cycle</th>
+                      <th className="px-3 py-1.5 text-right">Shares</th>
+                      <th className="px-3 py-1.5 text-right">Cost basis</th>
+                      <th className="px-3 py-1.5 text-left">Acquired</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lots.map((lot, i) => (
+                      <tr
+                        key={i}
+                        className={cn(
+                          i < lots.length - 1 && "border-border/60 border-b",
+                        )}
+                      >
+                        <td className="px-3 py-1.5 font-mono text-xs">
+                          #{String(lot.cycle_id)}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono">
+                          {String(lot.shares)}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono">
+                          {typeof lot.cost_basis === "number"
+                            ? `$${fmt(lot.cost_basis)}`
+                            : String(lot.cost_basis)}
+                        </td>
+                        <td className="px-3 py-1.5">
+                          {String(lot.acquired_date)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {trade.cycle_id != null && siblings.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider">
+                Other legs in cycle #{trade.cycle_id}
+              </h3>
+              <div className="border-border rounded-md border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-border/60 text-muted-foreground border-b text-xs uppercase">
+                      <th className="px-3 py-1.5 text-left">Leg</th>
+                      <th className="px-3 py-1.5 text-left">Entry</th>
+                      <th className="px-3 py-1.5 text-left">Exit</th>
+                      <th className="px-3 py-1.5 text-right">Strike</th>
+                      <th className="px-3 py-1.5 text-right">P&L</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {siblings.map((s, i) => (
+                      <tr
+                        key={s.id}
+                        className={cn(
+                          i < siblings.length - 1 && "border-border/60 border-b",
+                        )}
+                      >
+                        <td className="px-3 py-1.5 font-mono text-xs">
+                          {s.leg_type}
+                        </td>
+                        <td className="px-3 py-1.5">
+                          {formatDate(s.entry_date)}
+                        </td>
+                        <td className="px-3 py-1.5">
+                          {s.exit_date ? formatDate(s.exit_date) : "—"}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono">
+                          {s.strike != null ? `$${fmt(s.strike)}` : "—"}
+                        </td>
+                        <td
+                          className={cn(
+                            "px-3 py-1.5 text-right font-mono",
+                            s.realized_pnl != null &&
+                              (s.realized_pnl >= 0
+                                ? "text-emerald-500"
+                                : "text-red-500"),
+                          )}
+                        >
+                          {s.realized_pnl != null
+                            ? `${s.realized_pnl >= 0 ? "+" : ""}${fmtMoney(s.realized_pnl)}`
+                            : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {!explanation && !breakdown && diagnostic.length === 0 && (
+            <div className="text-muted-foreground text-sm">
+              No diagnostic detail recorded for this trade. (Older runs from
+              before the simulator captured per-leg context will not have it.)
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function TradeDetail({
   runId,
   mode,
@@ -144,6 +447,9 @@ function TradeDetail({
   mode: BacktestMode;
 }): JSX.Element {
   const [legFilter, setLegFilter] = useState<string>("");
+  const [selectedTrade, setSelectedTrade] = useState<BacktestTradeOut | null>(
+    null,
+  );
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["backtest-trades", runId],
@@ -227,6 +533,11 @@ function TradeDetail({
     data.some((t) => t.leg_type === leg),
   );
 
+  const cycleTradesForSelected =
+    selectedTrade != null && selectedTrade.cycle_id != null
+      ? data.filter((t) => t.cycle_id === selectedTrade.cycle_id)
+      : [];
+
   return (
     <div>
       {presentLegTypes.length > 0 && (
@@ -278,7 +589,12 @@ function TradeDetail({
         </TableHeader>
         <TableBody>
           {filtered.map((trade) => (
-            <TableRow key={trade.id}>
+            <TableRow
+              key={trade.id}
+              className="hover:bg-muted/50 cursor-pointer"
+              title="Click for full simulator detail"
+              onClick={() => setSelectedTrade(trade)}
+            >
               <TableCell className="font-mono font-medium">{trade.symbol}</TableCell>
               <TableCell className="font-mono text-xs">{trade.leg_type}</TableCell>
               <TableCell>{formatDate(trade.entry_date)}</TableCell>
@@ -321,6 +637,13 @@ function TradeDetail({
           ))}
         </TableBody>
       </Table>
+      {selectedTrade && (
+        <TradeDetailDialog
+          trade={selectedTrade}
+          cycleTrades={cycleTradesForSelected}
+          onClose={() => setSelectedTrade(null)}
+        />
+      )}
     </div>
   );
 }

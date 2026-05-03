@@ -153,6 +153,7 @@ class _PendingTrade:
     outcome: str | None
     realized_pnl: float | None
     fees: float
+    meta: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
@@ -242,6 +243,7 @@ def run_strategy_backtest(
 
         # Flush still-open legs so the UI can render in-flight positions.
         for opt in list(portfolio.options):
+            last_spot = state.last_known_spot.get(opt.symbol)
             state.pending.append(
                 _PendingTrade(
                     cycle_id=opt.cycle_id,
@@ -256,6 +258,26 @@ def run_strategy_backtest(
                     outcome="open",
                     realized_pnl=None,
                     fees=opt.fees_open,
+                    meta={
+                        "leg": opt.leg_type,
+                        "contracts": opt.contracts,
+                        "shares_covered": opt.shares_covered,
+                        "strike": opt.strike,
+                        "underlying_cost_basis": (
+                            round(opt.cost_basis, 4) if opt.cost_basis is not None else None
+                        ),
+                        "premium_per_share": round(opt.entry_premium, 4),
+                        "premium_total_credit": round(
+                            opt.entry_premium * opt.shares_covered, 2
+                        ),
+                        "fees_open": round(opt.fees_open, 2),
+                        "spot_at_run_end": (
+                            round(last_spot, 4) if last_spot is not None else None
+                        ),
+                        "explanation": (
+                            "Position still open at end of backtest window."
+                        ),
+                    },
                 )
             )
 
@@ -375,6 +397,7 @@ def _settle_expirations(
 def _settle_short_put(state: _SimState, opt: OptionPosition, day: date, underlying: float) -> None:
     intrinsic = max(opt.strike - underlying, 0.0)
     state.portfolio.remove_option(opt)
+    days_held = (day - opt.entry_date).days
     if intrinsic <= 0:
         # Expires worthless: collateral was held in cash; full premium kept.
         realized = opt.entry_premium * opt.shares_covered - opt.fees_open
@@ -394,6 +417,31 @@ def _settle_short_put(state: _SimState, opt: OptionPosition, day: date, underlyi
                 outcome="win",
                 realized_pnl=realized,
                 fees=opt.fees_open,
+                meta={
+                    "leg": "short_put",
+                    "contracts": opt.contracts,
+                    "shares_covered": opt.shares_covered,
+                    "spot_at_exit": round(underlying, 4),
+                    "strike": opt.strike,
+                    "intrinsic_at_exit": 0.0,
+                    "premium_per_share": round(opt.entry_premium, 4),
+                    "premium_total_credit": round(
+                        opt.entry_premium * opt.shares_covered, 2
+                    ),
+                    "fees_open": round(opt.fees_open, 2),
+                    "fees_close": 0.0,
+                    "days_held": days_held,
+                    "pnl_breakdown": {
+                        "premium_kept": round(
+                            opt.entry_premium * opt.shares_covered, 2
+                        ),
+                        "fees": round(-opt.fees_open, 2),
+                        "net": round(realized, 2),
+                    },
+                    "explanation": (
+                        "Put expired OTM; full premium kept, collateral released."
+                    ),
+                },
             )
         )
         return
@@ -416,6 +464,7 @@ def _settle_short_put(state: _SimState, opt: OptionPosition, day: date, underlyi
     )
     realized = opt.entry_premium * opt.shares_covered - opt.fees_open
     state.portfolio.realized_pnl += realized
+    paper_loss_on_shares = (underlying - opt.strike) * opt.shares_covered
     state.pending.append(
         _PendingTrade(
             cycle_id=opt.cycle_id,
@@ -430,6 +479,38 @@ def _settle_short_put(state: _SimState, opt: OptionPosition, day: date, underlyi
             outcome="assigned",
             realized_pnl=realized,
             fees=opt.fees_open,
+            meta={
+                "leg": "short_put",
+                "contracts": opt.contracts,
+                "shares_covered": opt.shares_covered,
+                "spot_at_exit": round(underlying, 4),
+                "strike": opt.strike,
+                "intrinsic_at_exit": round(intrinsic, 4),
+                "premium_per_share": round(opt.entry_premium, 4),
+                "premium_total_credit": round(
+                    opt.entry_premium * opt.shares_covered, 2
+                ),
+                "fees_open": round(opt.fees_open, 2),
+                "fees_close": 0.0,
+                "days_held": days_held,
+                "shares_acquired": opt.shares_covered,
+                "share_cost_basis": opt.strike,
+                "share_unrealized_pnl_at_assignment": round(paper_loss_on_shares, 2),
+                "pnl_breakdown": {
+                    "premium_kept": round(
+                        opt.entry_premium * opt.shares_covered, 2
+                    ),
+                    "fees": round(-opt.fees_open, 2),
+                    "net": round(realized, 2),
+                },
+                "explanation": (
+                    "Put assigned. This row records option premium kept only. "
+                    f"Shares acquired at strike ${opt.strike:.2f}; spot was "
+                    f"${underlying:.2f} so unrealized share P/L is "
+                    f"${paper_loss_on_shares:.2f} until shares exit "
+                    "(see future share_sold row)."
+                ),
+            },
         )
     )
 
@@ -437,6 +518,7 @@ def _settle_short_put(state: _SimState, opt: OptionPosition, day: date, underlyi
 def _settle_short_call(state: _SimState, opt: OptionPosition, day: date, underlying: float) -> None:
     intrinsic = max(underlying - opt.strike, 0.0)
     state.portfolio.remove_option(opt)
+    days_held = (day - opt.entry_date).days
     if intrinsic <= 0:
         realized = opt.entry_premium * opt.shares_covered - opt.fees_open
         state.portfolio.realized_pnl += realized
@@ -454,6 +536,34 @@ def _settle_short_call(state: _SimState, opt: OptionPosition, day: date, underly
                 outcome="win",
                 realized_pnl=realized,
                 fees=opt.fees_open,
+                meta={
+                    "leg": "covered_call",
+                    "contracts": opt.contracts,
+                    "shares_covered": opt.shares_covered,
+                    "spot_at_exit": round(underlying, 4),
+                    "strike": opt.strike,
+                    "intrinsic_at_exit": 0.0,
+                    "underlying_cost_basis": (
+                        round(opt.cost_basis, 4) if opt.cost_basis is not None else None
+                    ),
+                    "premium_per_share": round(opt.entry_premium, 4),
+                    "premium_total_credit": round(
+                        opt.entry_premium * opt.shares_covered, 2
+                    ),
+                    "fees_open": round(opt.fees_open, 2),
+                    "fees_close": 0.0,
+                    "days_held": days_held,
+                    "pnl_breakdown": {
+                        "premium_kept": round(
+                            opt.entry_premium * opt.shares_covered, 2
+                        ),
+                        "fees": round(-opt.fees_open, 2),
+                        "net": round(realized, 2),
+                    },
+                    "explanation": (
+                        "Call expired OTM; full premium kept, shares retained."
+                    ),
+                },
             )
         )
         return
@@ -476,6 +586,15 @@ def _settle_short_call(state: _SimState, opt: OptionPosition, day: date, underly
     )
     earliest_acquired = min((lot.acquired_date for lot in lots_to_sell), default=opt.entry_date)
     share_realized = (opt.strike - weighted_basis) * shares_sold
+    lot_breakdown = [
+        {
+            "cycle_id": lot.cycle_id,
+            "shares": lot.shares,
+            "cost_basis": round(lot.cost_basis, 4),
+            "acquired_date": lot.acquired_date.isoformat(),
+        }
+        for lot in lots_to_sell
+    ]
     for lot in lots_to_sell:
         state.portfolio.remove_shares(lot)
     option_realized = opt.entry_premium * opt.shares_covered - opt.fees_open
@@ -495,6 +614,37 @@ def _settle_short_call(state: _SimState, opt: OptionPosition, day: date, underly
             outcome="assigned",
             realized_pnl=option_realized,
             fees=opt.fees_open,
+            meta={
+                "leg": "covered_call",
+                "contracts": opt.contracts,
+                "shares_covered": opt.shares_covered,
+                "spot_at_exit": round(underlying, 4),
+                "strike": opt.strike,
+                "intrinsic_at_exit": round(intrinsic, 4),
+                "underlying_cost_basis": (
+                    round(opt.cost_basis, 4) if opt.cost_basis is not None else None
+                ),
+                "premium_per_share": round(opt.entry_premium, 4),
+                "premium_total_credit": round(
+                    opt.entry_premium * opt.shares_covered, 2
+                ),
+                "fees_open": round(opt.fees_open, 2),
+                "fees_close": 0.0,
+                "days_held": days_held,
+                "shares_called_away": shares_sold,
+                "pnl_breakdown": {
+                    "premium_kept": round(
+                        opt.entry_premium * opt.shares_covered, 2
+                    ),
+                    "fees": round(-opt.fees_open, 2),
+                    "net": round(option_realized, 2),
+                },
+                "explanation": (
+                    "Call assigned. This row records option premium kept only. "
+                    f"Shares were called away at strike ${opt.strike:.2f}; "
+                    "stock P/L (vs. cost basis) is on the paired share_sold row."
+                ),
+            },
         )
     )
     state.pending.append(
@@ -511,6 +661,26 @@ def _settle_short_call(state: _SimState, opt: OptionPosition, day: date, underly
             outcome="shares_called_away",
             realized_pnl=share_realized,
             fees=0.0,
+            meta={
+                "leg": "shares",
+                "shares_sold": shares_sold,
+                "weighted_cost_basis": round(weighted_basis, 4),
+                "sale_price": opt.strike,
+                "earliest_acquired_date": earliest_acquired.isoformat(),
+                "days_held": (day - earliest_acquired).days,
+                "lots": lot_breakdown,
+                "pnl_breakdown": {
+                    "proceeds": round(opt.strike * shares_sold, 2),
+                    "cost_basis_total": round(weighted_basis * shares_sold, 2),
+                    "net": round(share_realized, 2),
+                },
+                "explanation": (
+                    f"Shares delivered at strike ${opt.strike:.2f} against weighted "
+                    f"basis ${weighted_basis:.2f}. Net = "
+                    f"(${opt.strike:.2f} - ${weighted_basis:.2f}) * {shares_sold} "
+                    f"= ${share_realized:.2f}."
+                ),
+            },
         )
     )
 
@@ -543,7 +713,16 @@ def _apply_management_rules(state: _SimState, day: date, spot_cache: dict[str, M
             rule = "manage_dte"
         if rule is None:
             continue
-        _close_option_for_credit(state, opt, day, close_cost, rule)
+        _close_option_for_credit(
+            state,
+            opt,
+            day,
+            close_cost,
+            rule,
+            spot=spot.spot,
+            sigma=spot.sigma,
+            quote_mid=quote.mid,
+        )
 
 
 def _close_option_for_credit(
@@ -552,6 +731,10 @@ def _close_option_for_credit(
     day: date,
     close_cost: float,
     rule: str,
+    *,
+    spot: float,
+    sigma: float,
+    quote_mid: float,
 ) -> None:
     state.portfolio.remove_option(opt)
     fee_close = state.params.fee_per_contract * opt.contracts
@@ -567,6 +750,10 @@ def _close_option_for_credit(
     else:
         leg_label = LEG_CC_CLOSE
 
+    days_held = (day - opt.entry_date).days
+    days_to_expiry_remaining = (opt.expiration - day).days
+    slippage_total = state.params.slippage_per_share * opt.shares_covered
+
     state.pending.append(
         _PendingTrade(
             cycle_id=opt.cycle_id,
@@ -581,6 +768,48 @@ def _close_option_for_credit(
             outcome=f"closed_{rule}",
             realized_pnl=realized,
             fees=opt.fees_open + fee_close,
+            meta={
+                "leg": opt.leg_type,
+                "contracts": opt.contracts,
+                "shares_covered": opt.shares_covered,
+                "spot_at_exit": round(spot, 4),
+                "sigma_used": round(sigma, 6),
+                "strike": opt.strike,
+                "underlying_cost_basis": (
+                    round(opt.cost_basis, 4) if opt.cost_basis is not None else None
+                ),
+                "premium_per_share": round(opt.entry_premium, 4),
+                "premium_total_credit": round(
+                    opt.entry_premium * opt.shares_covered, 2
+                ),
+                "close_quote_mid": round(quote_mid, 4),
+                "close_slippage_per_share": state.params.slippage_per_share,
+                "close_cost_per_share": round(close_cost, 4),
+                "close_total_debit": round(close_cost * opt.shares_covered, 2),
+                "fees_open": round(opt.fees_open, 2),
+                "fees_close": round(fee_close, 2),
+                "slippage_total": round(slippage_total, 2),
+                "days_held": days_held,
+                "days_to_expiry_at_close": days_to_expiry_remaining,
+                "rule_triggered": rule,
+                "pnl_breakdown": {
+                    "premium_received": round(
+                        opt.entry_premium * opt.shares_covered, 2
+                    ),
+                    "buyback_cost": round(-close_cost * opt.shares_covered, 2),
+                    "fees": round(-(opt.fees_open + fee_close), 2),
+                    "net": round(realized, 2),
+                },
+                "explanation": (
+                    f"Closed for {rule}. Bought back at ${close_cost:.4f}/sh "
+                    f"(quote mid ${quote_mid:.4f} + "
+                    f"${state.params.slippage_per_share:.2f} slippage); "
+                    f"original credit was ${opt.entry_premium:.4f}/sh. "
+                    f"Net = (${opt.entry_premium:.4f} - ${close_cost:.4f}) * "
+                    f"{opt.shares_covered} - ${opt.fees_open + fee_close:.2f} fees "
+                    f"= ${realized:.2f}."
+                ),
+            },
         )
     )
 
@@ -666,6 +895,31 @@ def _open_covered_calls(
                 outcome="open",
                 realized_pnl=None,
                 fees=fee_open,
+                meta={
+                    "leg": "covered_call",
+                    "contracts": contracts,
+                    "shares_covered": position.shares_covered,
+                    "spot_at_entry": round(spot.spot, 4),
+                    "sigma_used": round(spot.sigma, 6),
+                    "strike": strike,
+                    "underlying_cost_basis": round(weighted_basis, 4),
+                    "quote_mid": round(quote.mid, 4),
+                    "slippage_per_share": state.params.slippage_per_share,
+                    "premium_per_share": round(credit_per_share, 4),
+                    "premium_total_credit": round(
+                        credit_per_share * position.shares_covered, 2
+                    ),
+                    "fees_open": round(fee_open, 2),
+                    "days_to_expiry_at_open": days_to_expiry,
+                    "delta_target": state.params.delta_target,
+                    "explanation": (
+                        f"Sold {contracts} CC against {position.shares_covered} "
+                        f"shares (basis ${weighted_basis:.2f}). Strike ${strike:.2f} "
+                        f"chosen at delta target {state.params.delta_target:.2f}; "
+                        f"premium ${credit_per_share:.4f}/sh = "
+                        f"${credit_per_share * position.shares_covered:.2f} credit."
+                    ),
+                },
             )
         )
 
@@ -749,6 +1003,34 @@ def _open_short_puts(
                 outcome="open",
                 realized_pnl=None,
                 fees=fee_open,
+                meta={
+                    "leg": "short_put",
+                    "contracts": contracts,
+                    "shares_covered": position.shares_covered,
+                    "spot_at_entry": round(spot.spot, 4),
+                    "sigma_used": round(spot.sigma, 6),
+                    "strike": strike,
+                    "quote_mid": round(quote.mid, 4),
+                    "slippage_per_share": state.params.slippage_per_share,
+                    "premium_per_share": round(credit_per_share, 4),
+                    "premium_total_credit": round(
+                        credit_per_share * position.shares_covered, 2
+                    ),
+                    "fees_open": round(fee_open, 2),
+                    "collateral_locked": round(collateral, 2),
+                    "days_to_expiry_at_open": days_to_expiry,
+                    "delta_target": state.params.delta_target,
+                    "filter_score": (
+                        round(evaluation.score, 6) if evaluation.score is not None else None
+                    ),
+                    "explanation": (
+                        f"Sold {contracts} CSP at strike ${strike:.2f} "
+                        f"(delta target {state.params.delta_target:.2f}, "
+                        f"sigma {spot.sigma:.4f}). Premium ${credit_per_share:.4f}/sh "
+                        f"= ${credit_per_share * position.shares_covered:.2f} credit; "
+                        f"collateral ${collateral:.2f} locked."
+                    ),
+                },
             )
         )
 
@@ -903,6 +1185,7 @@ def _flush_trades(session: Session, run_id: int, pending: list[_PendingTrade]) -
             "outcome": t.outcome,
             "realized_pnl": t.realized_pnl,
             "fees": t.fees,
+            "meta": t.meta,
         }
         for t in pending
     ]
