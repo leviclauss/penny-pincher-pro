@@ -35,3 +35,4 @@ class AlertPreference(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     quiet_hours_start: Mapped[time | None] = mapped_column(Time, nullable=True)
     quiet_hours_end: Mapped[time | None] = mapped_column(Time, nullable=True)
+    snooze_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

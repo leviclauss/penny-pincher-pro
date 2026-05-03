@@ -27,7 +27,13 @@ class FakeChannel:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
-    def send(self, alert_type: str, payload: dict[str, Any]) -> ChannelResult:
+    def send(
+        self,
+        alert_type: str,
+        payload: dict[str, Any],
+        *,
+        alert_id: int | None = None,
+    ) -> ChannelResult:
         self.calls.append((alert_type, payload))
         return ChannelResult(True, "1", None)
 

@@ -29,8 +29,15 @@ class FakeChannel:
         self._msg_id = msg_id
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
-    def send(self, alert_type: str, payload: dict[str, Any]) -> ChannelResult:
+    def send(
+        self,
+        alert_type: str,
+        payload: dict[str, Any],
+        *,
+        alert_id: int | None = None,
+    ) -> ChannelResult:
         self.calls.append((alert_type, payload))
+        self.last_alert_id = alert_id
         if self._delivered:
             return ChannelResult(True, self._msg_id, None)
         return ChannelResult(False, None, "boom")
@@ -205,6 +212,28 @@ def test_dispatch_fans_out_to_all_enabled_channels(db: None) -> None:
         assert "ntfy" in channels_sent
 
 
+def test_dispatch_skips_when_per_type_snoozed(db: None) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from db import get_session
+
+    with get_session() as session:
+        session.add(
+            AlertPreference(
+                alert_type="setup",
+                channels=["telegram"],
+                enabled=True,
+                snooze_until=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
+
+    fake = FakeChannel("telegram")
+    result = dispatch("setup", {"symbol": "AAPL"}, registry={"telegram": fake})
+    assert result.skipped_reason == "snoozed"
+    assert fake.calls == []
+    assert result.alert_id is None
+
+
 def test_dispatch_continues_after_one_channel_failure(db: None) -> None:
     """Sibling channels still deliver when one fails; alert row is still written."""
     from db import get_session
@@ -264,3 +293,34 @@ def test_dispatch_swallows_channel_exception(db: None) -> None:
     assert result.channels_sent == ["ntfy"]
     assert len(ntfy.calls) == 1
     assert result.alert_id is not None
+
+
+def test_dispatch_skips_when_global_snoozed(db: None) -> None:
+    """`/snooze 30m` writes the __global__ row; every alert type is muted."""
+    from datetime import UTC, datetime, timedelta
+
+    from alerts.dispatcher import GLOBAL_SNOOZE_KEY
+    from db import get_session
+
+    with get_session() as session:
+        session.add(
+            AlertPreference(
+                alert_type=GLOBAL_SNOOZE_KEY,
+                channels=[],
+                enabled=True,
+                snooze_until=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
+
+    fake = FakeChannel("telegram")
+    result = dispatch("morning_digest", {"symbol": "AAPL"}, registry={"telegram": fake})
+    assert result.skipped_reason == "snoozed"
+    assert fake.calls == []
+
+
+def test_dispatch_passes_alert_id_to_channel(db: None) -> None:
+    """Channels see the freshly-persisted row id so they can attach callbacks."""
+    fake = FakeChannel("telegram")
+    result = dispatch("morning_digest", {"symbol": "AAPL"}, registry={"telegram": fake})
+    assert result.alert_id is not None
+    assert fake.last_alert_id == result.alert_id

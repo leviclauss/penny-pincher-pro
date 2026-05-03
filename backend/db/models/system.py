@@ -1,4 +1,4 @@
-"""Operational tables: scheduled job execution history."""
+"""Operational tables: scheduled job execution history + tiny KV state."""
 
 from __future__ import annotations
 
@@ -21,3 +21,17 @@ class JobRun(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class BotState(Base):
+    """Tiny KV table for inbound-bot bookkeeping (e.g. getUpdates offset).
+
+    Single-row-per-key by design — kept here instead of in a dedicated module
+    because it carries the same "operational, not domain" weight as JobRun.
+    """
+
+    __tablename__ = "bot_state"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

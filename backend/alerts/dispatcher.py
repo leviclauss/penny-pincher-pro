@@ -5,10 +5,20 @@ hit. Missing preferences default to a single-channel ``["telegram"]`` config
 with quiet hours disabled — that lets phase 1 work before the screener
 pipeline is seeding rows.
 
-The dispatcher is best-effort per channel: each enabled channel renders
-its own template and delivers independently. A failure on one channel logs
-+ continues; the channel id is omitted from ``alerts.channels_sent`` but
-the alert row is written regardless so the in-app history stays complete.
+The dispatcher is best-effort per channel: a failed delivery omits that
+channel id from ``alerts.channels_sent`` but doesn't abort the others, and
+the alert row is written regardless so the in-app history is complete.
+
+Persistence ordering is intentional: the alert row is created *before* the
+channel send so the row id can be threaded into outbound payloads (Telegram
+inline-ack ``callback_data`` carries it). After sends complete, the row's
+``channels_sent`` is updated with the channels that actually delivered.
+
+Global snooze: a sentinel ``alert_preferences`` row with
+``alert_type=__global__`` carries a ``snooze_until`` timestamp set by the
+``/snooze`` Telegram command. While that timestamp is in the future, *all*
+alert types are silenced uniformly. The per-type preferences row may also
+carry its own ``snooze_until`` — either being active suppresses the alert.
 Multiple channels for the same fire produce **one** ``alerts`` row — channels
 are a delivery detail, not a separate alert per channel.
 """
@@ -17,7 +27,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import UTC, datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -35,6 +45,8 @@ from db.models.alerts import Alert, AlertPreference
 
 log = get_logger(__name__)
 
+GLOBAL_SNOOZE_KEY = "__global__"
+
 
 @dataclass(frozen=True, slots=True)
 class DispatchResult:
@@ -50,6 +62,7 @@ class _ResolvedPreference:
     enabled: bool
     quiet_hours_start: time | None
     quiet_hours_end: time | None
+    snooze_until: datetime | None
 
 
 _DEFAULT_PREFERENCE = _ResolvedPreference(
@@ -57,6 +70,7 @@ _DEFAULT_PREFERENCE = _ResolvedPreference(
     enabled=True,
     quiet_hours_start=None,
     quiet_hours_end=None,
+    snooze_until=None,
 )
 
 
@@ -94,6 +108,19 @@ def dispatch(
         log.info("dispatch.quiet_hours", alert_type=alert_type)
         return DispatchResult(None, [], [], "quiet_hours")
 
+    snooze_at = _effective_snooze(alert_type, preference)
+    if snooze_at is not None:
+        log.info(
+            "dispatch.snoozed",
+            alert_type=alert_type,
+            snooze_until=snooze_at.isoformat(),
+        )
+        return DispatchResult(None, [], [], "snoozed")
+
+    # Persist the alert row first so we have an id to thread through to
+    # channels that support per-alert callbacks (Telegram inline ack).
+    alert_id = _persist_alert(alert_type, payload, [])
+
     attempted: list[str] = []
     sent: list[str] = []
     for channel_id in preference.channels:
@@ -103,7 +130,7 @@ def dispatch(
             log.warning("dispatch.channel.unknown", channel=channel_id, alert_type=alert_type)
             continue
         try:
-            result = channel.send(alert_type, payload)
+            result = channel.send(alert_type, payload, alert_id=alert_id)
         except Exception as exc:
             log.error(
                 "dispatch.channel.exception",
@@ -122,7 +149,7 @@ def dispatch(
                 error=result.error,
             )
 
-    alert_id = _persist_alert(alert_type, payload, sent)
+    _update_channels_sent(alert_id, sent)
     return DispatchResult(alert_id, attempted, sent, None)
 
 
@@ -139,6 +166,7 @@ def _load_preference(alert_type: str) -> _ResolvedPreference:
             enabled=row.enabled,
             quiet_hours_start=row.quiet_hours_start,
             quiet_hours_end=row.quiet_hours_end,
+            snooze_until=row.snooze_until,
         )
 
 
@@ -155,6 +183,44 @@ def _in_quiet_hours(preference: _ResolvedPreference, *, now: datetime | None = N
         return start <= current < end
     # Overnight window (e.g. 22:00 → 07:00).
     return current >= start or current < end
+
+
+def _effective_snooze(
+    alert_type: str,
+    preference: _ResolvedPreference,
+    *,
+    now: datetime | None = None,
+) -> datetime | None:
+    """Return the active snooze cutoff (per-type or global), else None."""
+    current = now or utcnow()
+    candidates: list[datetime] = []
+    per_type = _aware(preference.snooze_until)
+    if per_type is not None and current < per_type:
+        candidates.append(per_type)
+    if alert_type != GLOBAL_SNOOZE_KEY:
+        global_until = _aware(_load_global_snooze())
+        if global_until is not None and current < global_until:
+            candidates.append(global_until)
+    return max(candidates) if candidates else None
+
+
+def _aware(when: datetime | None) -> datetime | None:
+    """Coerce a (possibly tz-naive) DB datetime to UTC. SQLite drops tz info."""
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        return when.replace(tzinfo=UTC)
+    return when
+
+
+def _load_global_snooze() -> datetime | None:
+    with get_session() as session:
+        row = session.execute(
+            select(AlertPreference).where(AlertPreference.alert_type == GLOBAL_SNOOZE_KEY)
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        return row.snooze_until
 
 
 def _persist_alert(
@@ -176,3 +242,12 @@ def _persist_alert(
         session.flush()
         alert_id = row.id
     return alert_id
+
+
+def _update_channels_sent(alert_id: int, channels_sent: list[str]) -> None:
+    with get_session() as session:
+        row = session.get(Alert, alert_id)
+        if row is None:
+            log.warning("dispatch.alert.missing_after_persist", alert_id=alert_id)
+            return
+        row.channels_sent = json.dumps(channels_sent) if channels_sent else None

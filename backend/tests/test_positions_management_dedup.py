@@ -246,7 +246,13 @@ def test_run_then_rerun_through_real_dispatcher_path(
         def __init__(self) -> None:
             self.calls: list[tuple[str, dict[str, object]]] = []
 
-        def send(self, alert_type: str, payload: dict[str, object]) -> ChannelResult:
+        def send(
+            self,
+            alert_type: str,
+            payload: dict[str, object],
+            *,
+            alert_id: int | None = None,
+        ) -> ChannelResult:
             self.calls.append((alert_type, dict(payload)))
             return ChannelResult(True, "msg-1", None)
 

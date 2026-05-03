@@ -15,14 +15,17 @@ same ``job_runs`` table.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from alerts.channels.telegram_inbound import TelegramInboundBot
 from core.config import get_settings
 from core.logging import get_logger
 from db import get_session
@@ -70,6 +73,11 @@ class JobStatus:
 
 
 JOB_REGISTRY: dict[str, JobInfo] = {}
+
+# The inbound bot is a long-lived blocking loop — not an APScheduler job. We
+# stash the live worker (and its bot handle) in a small mutable container so
+# shutdown() can reach across and stop it cleanly without `global`.
+_INBOUND_STATE: dict[str, Any] = {"thread": None, "bot": None}
 
 
 def register_job(
@@ -157,6 +165,8 @@ def create_and_start() -> BackgroundScheduler:
         settings.scheduler_backup_minute,
         settings.timezone,
     )
+    if settings.telegram_inbound_enabled:
+        _start_inbound_bot()
     scheduler.start()
     log.info(
         "scheduler.started",
@@ -185,8 +195,48 @@ def _add_minutes(hour: int, minute: int, delta_minutes: int) -> tuple[int, int]:
 
 
 def shutdown(scheduler: BackgroundScheduler, *, wait: bool = True) -> None:
+    _stop_inbound_bot()
     scheduler.shutdown(wait=wait)
     log.info("scheduler.stopped")
+
+
+def _start_inbound_bot() -> None:
+    """Spawn the long-poll inbound bot on a daemon thread.
+
+    Idempotent: a second call while a thread is alive is a no-op so the
+    FastAPI lifespan can call ``create_and_start`` more than once during
+    test setup without leaking workers.
+    """
+    existing_thread = _INBOUND_STATE.get("thread")
+    if isinstance(existing_thread, threading.Thread) and existing_thread.is_alive():
+        return
+    bot = TelegramInboundBot()
+    if not bot.configured:
+        log.warning("telegram_inbound.skip.unconfigured")
+        return
+    thread = threading.Thread(
+        target=bot.run_forever,
+        name="telegram-inbound-poller",
+        daemon=True,
+    )
+    thread.start()
+    _INBOUND_STATE["bot"] = bot
+    _INBOUND_STATE["thread"] = thread
+    log.info("telegram_inbound.thread_started")
+
+
+def _stop_inbound_bot() -> None:
+    bot = _INBOUND_STATE.get("bot")
+    thread = _INBOUND_STATE.get("thread")
+    if isinstance(bot, TelegramInboundBot):
+        bot.stop()
+    if isinstance(thread, threading.Thread) and thread.is_alive():
+        # Long-poll can be up to ``telegram_inbound_long_poll_s`` long;
+        # block briefly so we don't yank the connection mid-flight, then
+        # let the daemon flag finish the cleanup if it's still pending.
+        thread.join(timeout=2.0)
+    _INBOUND_STATE["bot"] = None
+    _INBOUND_STATE["thread"] = None
 
 
 def _register_evening(

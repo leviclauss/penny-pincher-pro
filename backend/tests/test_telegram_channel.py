@@ -84,6 +84,20 @@ def test_send_posts_to_bot_api() -> None:
 
 
 @respx.mock
+def test_send_attaches_inline_ack_keyboard_when_alert_id_provided() -> None:
+    """Inline ack button rides on the last chunk so the user can tap to ack."""
+    route = respx.post("https://api.telegram.org/bottkn/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {"message_id": 200}})
+    )
+    result = TelegramChannel().send("morning_digest", _payload(), alert_id=77)
+
+    assert result.delivered is True
+    body = json.loads(route.calls.last.request.content)
+    keyboard = body["reply_markup"]["inline_keyboard"]
+    assert keyboard[0][0]["callback_data"] == "ack:77"
+
+
+@respx.mock
 def test_retries_on_5xx_then_succeeds() -> None:
     route = respx.post("https://api.telegram.org/bottkn/sendMessage").mock(
         side_effect=[
