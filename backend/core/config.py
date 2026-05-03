@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     finnhub_api_key: str = Field(default="")
     finnhub_base_url: str = "https://finnhub.io/api/v1"
     earnings_lookahead_days: int = 90
+    # Free tier ceiling is 60 cpm; default leaves a small safety margin.
+    finnhub_rate_limit_per_min: int = 55
+    # When True, fetch earnings via the bulk calendar endpoint (1 req/run)
+    # and fall back to per-symbol queries only for active symbols missing
+    # from the bulk payload. See backend/docs/api-rate-limits.md.
+    finnhub_earnings_use_bulk: bool = True
 
     yahoo_base_url: str = "https://query1.finance.yahoo.com"
     macro_lookback_days: int = 365

@@ -87,13 +87,66 @@ def test_filters_to_active_tickers(session: Session) -> None:
     assert symbols == ["AAPL", "MSFT"]
 
 
-def test_passes_window_to_client(session: Session) -> None:
+def test_passes_window_to_client_per_symbol_mode(session: Session) -> None:
     client = FakeFinnhubClient([])
-    fetch_earnings(session, client, lookahead_days=45, as_of=date(2026, 5, 1))
+    fetch_earnings(session, client, lookahead_days=45, as_of=date(2026, 5, 1), use_bulk=False)
     assert client.calls == [
         {"from_date": date(2026, 5, 1), "to_date": date(2026, 6, 15), "symbol": "AAPL"},
         {"from_date": date(2026, 5, 1), "to_date": date(2026, 6, 15), "symbol": "MSFT"},
     ]
+
+
+def test_bulk_mode_issues_single_call_when_all_symbols_present(session: Session) -> None:
+    client = FakeFinnhubClient(_records())
+    summary = fetch_earnings(
+        session, client, lookahead_days=30, as_of=date(2026, 5, 1), use_bulk=True
+    )
+
+    assert client.calls == [
+        {"from_date": date(2026, 5, 1), "to_date": date(2026, 5, 31), "symbol": None},
+    ]
+    assert summary.bulk_used is True
+    assert summary.fallback_calls == 0
+    assert summary.symbols_in_window == 2  # filtered to active set
+    assert summary.rows_written == 2
+
+
+def test_bulk_mode_falls_back_per_symbol_for_missing(session: Session) -> None:
+    # Bulk payload omits MSFT entirely, mimicking the historical bug.
+    bulk_only = [
+        EarningsRecord(symbol="AAPL", earnings_date=date(2026, 5, 5), time_of_day="AMC"),
+    ]
+    extra_when_queried = [
+        EarningsRecord(symbol="MSFT", earnings_date=date(2026, 5, 6), time_of_day="BMO"),
+    ]
+
+    class PartialBulkClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def get_earnings_calendar(
+            self,
+            *,
+            from_date: date,
+            to_date: date,
+            symbol: str | None = None,
+        ) -> list[EarningsRecord]:
+            self.calls.append({"from_date": from_date, "to_date": to_date, "symbol": symbol})
+            if symbol is None:
+                return list(bulk_only)
+            return [r for r in extra_when_queried if r.symbol == symbol]
+
+    client = PartialBulkClient()
+    summary = fetch_earnings(
+        session, client, lookahead_days=30, as_of=date(2026, 5, 1), use_bulk=True
+    )
+
+    # 1 bulk call + 1 per-symbol top-up for MSFT.
+    assert len(client.calls) == 2
+    assert client.calls[0]["symbol"] is None
+    assert client.calls[1]["symbol"] == "MSFT"
+    assert summary.fallback_calls == 1
+    assert summary.symbols_in_window == 2
 
 
 def test_upsert_overwrites_time_of_day(session: Session) -> None:

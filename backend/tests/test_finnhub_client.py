@@ -17,6 +17,7 @@ from ingestion.finnhub_client import (
     EarningsRecord,
     FinnhubClient,
     FinnhubError,
+    _RateLimiter,
 )
 
 
@@ -159,3 +160,47 @@ def test_get_company_profile_partial_fields() -> None:
     assert out.name == "Foo"
     assert out.sector is None
     assert out.market_cap is None
+
+
+def test_rate_limiter_blocks_when_window_full(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When max_calls slots are taken in the window, the next acquire sleeps."""
+    fake_now = [1000.0]
+    sleeps: list[float] = []
+
+    def fake_monotonic() -> float:
+        return fake_now[0]
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        fake_now[0] += seconds
+
+    monkeypatch.setattr("ingestion.finnhub_client.time.monotonic", fake_monotonic)
+    monkeypatch.setattr("ingestion.finnhub_client.time.sleep", fake_sleep)
+
+    limiter = _RateLimiter(max_calls=2, window_s=60.0)
+    limiter.acquire()  # t=1000
+    fake_now[0] += 1.0
+    limiter.acquire()  # t=1001
+    fake_now[0] += 1.0
+    # Window now holds [1000, 1001]; third acquire at t=1002 must sleep ~59s
+    # so the oldest (1000) ages out of the 60s window.
+    limiter.acquire()
+    assert sleeps and 58.0 <= sleeps[0] <= 60.0
+
+
+def test_rate_limiter_allows_when_old_calls_age_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_now = [1000.0]
+
+    def fake_monotonic() -> float:
+        return fake_now[0]
+
+    monkeypatch.setattr("ingestion.finnhub_client.time.monotonic", fake_monotonic)
+    monkeypatch.setattr("ingestion.finnhub_client.time.sleep", lambda s: None)
+
+    limiter = _RateLimiter(max_calls=2, window_s=60.0)
+    limiter.acquire()
+    limiter.acquire()
+    fake_now[0] += 61.0  # both prior calls are now outside the window
+    # Should not need to sleep — verified by patching sleep to a no-op above
+    # and confirming this returns promptly.
+    limiter.acquire()

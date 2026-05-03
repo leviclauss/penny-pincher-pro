@@ -6,10 +6,19 @@ for tests, and a normalized record type.
 
 Finnhub free tier limits: 60 calls/min, US equities only. Without an API key
 configured, callers should skip earnings ingestion (see ``ingestion/earnings``).
+
+A built-in sliding-window rate limiter (``_RateLimiter``) caps outbound calls
+to ``settings.finnhub_rate_limit_per_min`` (default 55, just under the free-
+tier ceiling) so a tight per-symbol loop can't burst past the limit. The
+limiter is process-local — fine for our single-process scheduler but worth
+remembering if we ever fan out across workers.
 """
 
 from __future__ import annotations
 
+import threading
+import time
+from collections import deque
 from dataclasses import dataclass
 from datetime import date
 
@@ -27,6 +36,32 @@ from core.logging import get_logger
 log = get_logger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
+
+
+class _RateLimiter:
+    """Thread-safe sliding-window limiter: at most ``max_calls`` per ``window_s``."""
+
+    def __init__(self, max_calls: int, window_s: float = 60.0) -> None:
+        self._max = max(1, int(max_calls))
+        self._window = float(window_s)
+        self._calls: deque[float] = deque()
+        self._lock = threading.Lock()
+
+    def acquire(self) -> None:
+        """Block until a slot is available, then record the call timestamp."""
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                cutoff = now - self._window
+                while self._calls and self._calls[0] <= cutoff:
+                    self._calls.popleft()
+                if len(self._calls) < self._max:
+                    self._calls.append(now)
+                    return
+                wait_for = self._window - (now - self._calls[0])
+            if wait_for > 0:
+                log.info("finnhub.rate_limit.sleep", seconds=round(wait_for, 2))
+                time.sleep(wait_for)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +108,7 @@ class FinnhubClient:
         base_url: str | None = None,
         *,
         client: httpx.Client | None = None,
+        rate_limit_per_min: int | None = None,
     ) -> None:
         settings = get_settings()
         key = api_key if api_key is not None else settings.finnhub_api_key
@@ -81,6 +117,12 @@ class FinnhubClient:
         self._key = key
         self._base = (base_url or settings.finnhub_base_url).rstrip("/")
         self._client = client or httpx.Client(timeout=DEFAULT_TIMEOUT_SECONDS)
+        limit = (
+            rate_limit_per_min
+            if rate_limit_per_min is not None
+            else settings.finnhub_rate_limit_per_min
+        )
+        self._limiter = _RateLimiter(max_calls=limit, window_s=60.0)
 
     @retry(
         retry=retry_if_exception_type(_RETRYABLE_EXCEPTIONS),
@@ -110,6 +152,7 @@ class FinnhubClient:
             to_date=str(to_date),
             symbol=symbol,
         )
+        self._limiter.acquire()
         response = self._client.get(f"{self._base}/calendar/earnings", params=params)
         response.raise_for_status()
         return _normalize(response.json())
@@ -125,6 +168,7 @@ class FinnhubClient:
         has no profile (delisted, non-US, ETF on free tier)."""
         params = {"symbol": symbol, "token": self._key}
         log.info("finnhub.get_company_profile", symbol=symbol)
+        self._limiter.acquire()
         response = self._client.get(f"{self._base}/stock/profile2", params=params)
         response.raise_for_status()
         return _normalize_profile(symbol, response.json())
