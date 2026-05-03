@@ -7,7 +7,7 @@ return type. Higher layers (``ingestion.bars``) handle batching and persistence.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Protocol
 
 from alpaca.data.enums import Adjustment
@@ -127,11 +127,17 @@ class AlpacaClient:
             feed=self._feed,
             adjustment="split",
         )
+        # Alpaca treats the end date as exclusive for daily bars, so add 1 day
+        # to preserve the inclusive-end contract the rest of the codebase expects.
+        end_exclusive = (
+            end + timedelta(days=1) if isinstance(end, date) and not isinstance(end, datetime)
+            else end
+        )
         request = StockBarsRequest(
             symbol_or_symbols=symbols,
             timeframe=TimeFrame.Day,
             start=start,
-            end=end,
+            end=end_exclusive,
             feed=self._feed,
             adjustment=Adjustment.SPLIT,
         )
