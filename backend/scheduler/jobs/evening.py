@@ -17,6 +17,10 @@ from datetime import date
 import pandas_market_calendars as mcal
 from sqlalchemy.orm import Session
 
+from alerts.dispatcher import dispatch
+from alerts.triggers._dedup import already_dispatched_for_as_of
+from alerts.triggers.freshness_alert import ALERT_TYPE as FRESHNESS_ALERT_TYPE
+from alerts.triggers.freshness_alert import build_freshness_alert_payload
 from core.logging import get_logger
 from core.time import utcnow
 from ingestion.alpaca_client import AlpacaClient
@@ -67,7 +71,20 @@ def run_evening_pipeline(
             ),
             iv_rows=summary.iv.iv_rows_written,
             as_of=today.isoformat(),
+            symbols_skipped=summary.fetch.symbols_skipped,
+            symbols_skipped_count=len(summary.fetch.symbols_skipped),
         )
+
+    # Fire a freshness alert if any symbols are stale or were skipped.
+    payload = build_freshness_alert_payload(
+        session,
+        as_of=today,
+        symbols_skipped=summary.fetch.symbols_skipped,
+    )
+    if payload is not None and not already_dispatched_for_as_of(
+        session, FRESHNESS_ALERT_TYPE, as_of=today
+    ):
+        dispatch(FRESHNESS_ALERT_TYPE, payload)
 
 
 def _is_trading_day(calendar_name: str, day: date) -> bool:

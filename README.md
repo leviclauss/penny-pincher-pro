@@ -66,6 +66,19 @@ how to add a filter or a new ingested source.
 
 ## Quick start
 
+**Docker (recommended — works on Mac, Windows, Linux):**
+
+```bash
+cp .env.example .env       # fill in Alpaca keys
+make dev                   # builds + starts backend :8000 + frontend :5173
+# In another terminal:
+docker compose exec backend python -m scripts.seed_dev
+make docker-ingest-full    # backfill 5y of bars + indicators
+make docker-test           # run the test suite
+```
+
+**Local (Mac / Linux with Python 3.11+ and Node 20+):**
+
 ```bash
 cp .env.example .env       # fill in Alpaca keys
 make install               # backend + frontend deps
@@ -75,7 +88,8 @@ make run-backend           # FastAPI on :8000
 make run-frontend          # Vite on :5173
 ```
 
-Or with Docker: `make dev` (runs backend + frontend via compose).
+> **Windows note:** Use the Docker path. The `py_vollib` dependency requires
+> CPython internals not available in the Windows Store Python build.
 
 ## Repo layout
 

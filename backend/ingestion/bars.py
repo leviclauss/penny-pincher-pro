@@ -8,7 +8,7 @@ multi-symbol requests; we cap chunk size to stay well under rate limits).
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
 import pandas_market_calendars as mcal
@@ -34,6 +34,7 @@ class FetchSummary:
     bars_written: int
     earliest: date | None
     latest: date | None
+    symbols_skipped: list[str] = field(default_factory=list)
 
 
 def fetch_full(
@@ -97,6 +98,7 @@ def _fetch_and_upsert(
     earliest: date | None = None
     latest: date | None = None
     symbols_with_data = 0
+    symbols_skipped: list[str] = []
 
     for chunk in _chunk(symbols, batch_size):
         bars_by_symbol = client.get_daily_bars(list(chunk), start=start, end=end)
@@ -109,6 +111,13 @@ def _fetch_and_upsert(
             chunk_max = bars[-1].date
             earliest = chunk_min if earliest is None or chunk_min < earliest else earliest
             latest = chunk_max if latest is None or chunk_max > latest else latest
+
+        # Track symbols in this chunk that returned no data.
+        for sym in chunk:
+            if sym not in bars_by_symbol or not bars_by_symbol[sym]:
+                symbols_skipped.append(sym)
+                log.warning("bars.symbol_skipped", symbol=sym, start=str(start), end=str(end))
+
         session.commit()
 
     log.info(
@@ -116,6 +125,7 @@ def _fetch_and_upsert(
         symbols=len(symbols),
         with_data=symbols_with_data,
         bars=bars_written,
+        skipped=len(symbols_skipped),
         earliest=str(earliest) if earliest else None,
         latest=str(latest) if latest else None,
     )
@@ -125,6 +135,7 @@ def _fetch_and_upsert(
         bars_written=bars_written,
         earliest=earliest,
         latest=latest,
+        symbols_skipped=symbols_skipped,
     )
 
 
@@ -205,9 +216,11 @@ def _merge(summaries: Iterable[FetchSummary], symbols_requested: int) -> FetchSu
     with_data = 0
     earliest: date | None = None
     latest: date | None = None
+    skipped: list[str] = []
     for s in summaries:
         bars += s.bars_written
         with_data += s.symbols_with_data
+        skipped.extend(s.symbols_skipped)
         if s.earliest and (earliest is None or s.earliest < earliest):
             earliest = s.earliest
         if s.latest and (latest is None or s.latest > latest):
@@ -218,6 +231,7 @@ def _merge(summaries: Iterable[FetchSummary], symbols_requested: int) -> FetchSu
         bars_written=bars,
         earliest=earliest,
         latest=latest,
+        symbols_skipped=skipped,
     )
 
 

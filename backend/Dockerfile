@@ -10,15 +10,15 @@ RUN pip install --upgrade pip
 
 
 FROM base AS dev
-RUN pip install -e ".[dev]"
 COPY . .
+RUN pip install -e ".[dev]"
 EXPOSE 8000
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 
 FROM base AS prod
-RUN pip install -e .
 COPY . .
+RUN pip install -e .
 
 # Run as non-root. /data and /backups are pre-created so named volumes
 # inherit app:app ownership on first init.

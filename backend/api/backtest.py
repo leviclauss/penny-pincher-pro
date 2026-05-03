@@ -7,12 +7,13 @@ from datetime import date as DateType
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from backtest.filter_backtest import run_filter_backtest
+from backtest.forward_returns import evaluate_forward_returns
 from core.logging import get_logger
 from db import get_session
 from db.models.backtest import BacktestRun, BacktestTrade
@@ -54,6 +55,40 @@ class BacktestRunIn(BaseModel):
     end_date: DateType
     forward_days: int = Field(default=30, ge=1, le=252)
     symbols: list[str] | None = None
+
+
+class ForwardReturnRowOut(BaseModel):
+    symbol: str
+    date: DateType
+    score: float | None
+    close_on_date: float | None
+    return_5d: float | None
+    return_10d: float | None
+    return_21d: float | None
+
+
+class ForwardReturnSummaryOut(BaseModel):
+    config_id: int
+    config_name: str
+    start_date: DateType
+    end_date: DateType
+    total_picks: int
+    picks_with_returns: int
+    hit_rate_5d: float | None
+    hit_rate_10d: float | None
+    hit_rate_21d: float | None
+    mean_return_5d: float | None
+    mean_return_10d: float | None
+    mean_return_21d: float | None
+    median_return_5d: float | None
+    median_return_10d: float | None
+    median_return_21d: float | None
+    rows: list[ForwardReturnRowOut]
+
+
+_CONFIG_ID_QUERY = Query(..., description="Filter config ID")
+_START_QUERY = Query(..., description="Start date (YYYY-MM-DD)")
+_END_QUERY = Query(..., description="End date (YYYY-MM-DD)")
 
 
 @router.get("/runs", response_model=list[BacktestRunOut])
@@ -134,6 +169,58 @@ def delete_run(run_id: int) -> Response:
         session.delete(run)
         log.info("backtest.api.run.deleted", run_id=run_id)
     return Response(status_code=204)
+
+
+@router.get("/forward-returns", response_model=ForwardReturnSummaryOut)
+def forward_returns(
+    config_id: int = _CONFIG_ID_QUERY,
+    start: DateType = _START_QUERY,
+    end: DateType = _END_QUERY,
+) -> ForwardReturnSummaryOut:
+    """Compute forward returns for historical screener picks."""
+    if start > end:
+        raise HTTPException(status_code=400, detail="start must be before end")
+
+    with get_session() as session:
+        try:
+            summary = evaluate_forward_returns(
+                session,
+                config_id=config_id,
+                start_date=start,
+                end_date=end,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return ForwardReturnSummaryOut(
+        config_id=summary.config_id,
+        config_name=summary.config_name,
+        start_date=summary.start_date,
+        end_date=summary.end_date,
+        total_picks=summary.total_picks,
+        picks_with_returns=summary.picks_with_returns,
+        hit_rate_5d=summary.hit_rate_5d,
+        hit_rate_10d=summary.hit_rate_10d,
+        hit_rate_21d=summary.hit_rate_21d,
+        mean_return_5d=summary.mean_return_5d,
+        mean_return_10d=summary.mean_return_10d,
+        mean_return_21d=summary.mean_return_21d,
+        median_return_5d=summary.median_return_5d,
+        median_return_10d=summary.median_return_10d,
+        median_return_21d=summary.median_return_21d,
+        rows=[
+            ForwardReturnRowOut(
+                symbol=r.symbol,
+                date=r.date,
+                score=r.score,
+                close_on_date=r.close_on_date,
+                return_5d=r.return_5d,
+                return_10d=r.return_10d,
+                return_21d=r.return_21d,
+            )
+            for r in summary.rows
+        ],
+    )
 
 
 def _build_run_out(session: Session, run: BacktestRun) -> BacktestRunOut:
