@@ -212,6 +212,8 @@ export interface PositionSnapshotOut {
   dte: number | null;
 }
 
+export type AcquisitionSource = "open_market" | "assignment";
+
 export interface PositionOut {
   id: number;
   symbol: string;
@@ -220,6 +222,7 @@ export interface PositionOut {
   opened_at: string;
   closed_at: string | null;
   notes: string | null;
+  acquisition_source: AcquisitionSource | null;
   legs: PositionLegOut[];
   latest_snapshot: PositionSnapshotOut | null;
 }
@@ -255,6 +258,23 @@ export interface OpenCoveredCallInput {
   credit: number;
   opened_on: string;
   fees?: number;
+}
+
+export interface OpenLongSharesInput {
+  symbol: string;
+  shares: number;
+  cost_basis: number;
+  opened_on: string;
+  acquisition_source: AcquisitionSource;
+  fees?: number;
+  notes?: string | null;
+}
+
+export interface OpenCoveredCallFreshInput extends OpenLongSharesInput {
+  expiration: string;
+  strike: number;
+  contracts: number;
+  credit: number;
 }
 
 export interface CloseDebitInput {

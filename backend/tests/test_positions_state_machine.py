@@ -330,6 +330,206 @@ def test_position_not_found(db: None) -> None:
         sm.close_short_put(session, 9999, debit=1.0, closed_on=date(2026, 5, 15))
 
 
+def _open_long_shares(
+    symbol: str = "MSFT",
+    shares: int = 200,
+    cost_basis: float = 410.50,
+    acquisition_source: str = sm.ACQUISITION_OPEN_MARKET,
+    fees: float = 0.0,
+    notes: str | None = None,
+) -> int:
+    with get_session() as session:
+        position = sm.open_long_shares(
+            session,
+            sm.OpenLongSharesInput(
+                symbol=symbol,
+                shares=shares,
+                cost_basis=cost_basis,
+                opened_on=date(2026, 4, 15),
+                acquisition_source=acquisition_source,
+                fees=fees,
+                notes=notes,
+            ),
+        )
+        session.flush()
+        return position.id
+
+
+def test_open_long_shares_creates_position_and_leg(db: None) -> None:
+    pid = _open_long_shares(
+        symbol="msft", fees=1.25, notes="bought during dip"
+    )
+
+    with get_session() as session:
+        position = session.get(Position, pid)
+        assert position is not None
+        assert position.symbol == "MSFT"
+        assert position.state == sm.STATE_LONG_SHARES
+        assert position.acquisition_source == sm.ACQUISITION_OPEN_MARKET
+        assert position.notes == "bought during dip"
+        assert position.cycle_id == pid
+
+        leg = session.execute(
+            select(PositionLeg).where(PositionLeg.position_id == pid)
+        ).scalar_one()
+        assert leg.leg_type == sm.LEG_SHARES
+        assert leg.shares == 200
+        assert leg.entry_price == pytest.approx(410.50)
+        assert leg.entry_date == date(2026, 4, 15)
+        assert leg.outcome == sm.OUTCOME_OPEN
+        assert leg.fees == pytest.approx(1.25)
+
+
+def test_open_long_shares_records_assignment_source(db: None) -> None:
+    pid = _open_long_shares(
+        symbol="NVDA",
+        shares=100,
+        cost_basis=120.0,
+        acquisition_source=sm.ACQUISITION_ASSIGNMENT,
+    )
+
+    with get_session() as session:
+        position = session.get(Position, pid)
+        assert position is not None
+        assert position.acquisition_source == sm.ACQUISITION_ASSIGNMENT
+
+
+def test_open_long_shares_validates_inputs(db: None) -> None:
+    with (
+        get_session() as session,
+        pytest.raises(sm.InvalidLegError, match="shares"),
+    ):
+        sm.open_long_shares(
+            session,
+            sm.OpenLongSharesInput(
+                symbol="AAPL",
+                shares=0,
+                cost_basis=170.0,
+                opened_on=date(2026, 5, 1),
+                acquisition_source=sm.ACQUISITION_OPEN_MARKET,
+            ),
+        )
+
+    with (
+        get_session() as session,
+        pytest.raises(sm.InvalidLegError, match="cost_basis"),
+    ):
+        sm.open_long_shares(
+            session,
+            sm.OpenLongSharesInput(
+                symbol="AAPL",
+                shares=100,
+                cost_basis=0.0,
+                opened_on=date(2026, 5, 1),
+                acquisition_source=sm.ACQUISITION_OPEN_MARKET,
+            ),
+        )
+
+    with (
+        get_session() as session,
+        pytest.raises(sm.InvalidLegError, match="acquisition_source"),
+    ):
+        sm.open_long_shares(
+            session,
+            sm.OpenLongSharesInput(
+                symbol="AAPL",
+                shares=100,
+                cost_basis=170.0,
+                opened_on=date(2026, 5, 1),
+                acquisition_source="inheritance",
+            ),
+        )
+
+
+def test_open_covered_call_fresh_creates_two_legs(db: None) -> None:
+    with get_session() as session:
+        new_position = sm.open_covered_call_fresh(
+            session,
+            sm.OpenCoveredCallFreshInput(
+                symbol="aapl",
+                shares=200,
+                cost_basis=170.0,
+                opened_on=date(2026, 5, 1),
+                acquisition_source=sm.ACQUISITION_OPEN_MARKET,
+                expiration=date(2026, 6, 19),
+                strike=180.0,
+                contracts=2,
+                credit=2.40,
+                fees=0.65,
+            ),
+        )
+        session.flush()
+        pid = new_position.id
+
+    with get_session() as session:
+        position = session.get(Position, pid)
+        assert position is not None
+        assert position.symbol == "AAPL"
+        assert position.state == sm.STATE_COVERED_CALL
+        assert position.acquisition_source == sm.ACQUISITION_OPEN_MARKET
+
+        legs = (
+            session.execute(
+                select(PositionLeg).where(PositionLeg.position_id == pid).order_by(PositionLeg.id)
+            )
+            .scalars()
+            .all()
+        )
+        assert len(legs) == 2
+        shares, call = legs
+        assert shares.leg_type == sm.LEG_SHARES
+        assert shares.shares == 200
+        assert shares.entry_price == pytest.approx(170.0)
+        assert shares.fees == pytest.approx(0.65)
+        assert call.leg_type == sm.LEG_COVERED_CALL
+        assert call.contracts == 2
+        assert call.strike == pytest.approx(180.0)
+        assert call.entry_price == pytest.approx(2.40)
+        assert call.outcome == sm.OUTCOME_OPEN
+
+
+def test_open_covered_call_fresh_rejects_undercovered_call(db: None) -> None:
+    with (
+        get_session() as session,
+        pytest.raises(sm.InvalidLegError, match="not enough shares"),
+    ):
+        sm.open_covered_call_fresh(
+            session,
+            sm.OpenCoveredCallFreshInput(
+                symbol="AAPL",
+                shares=100,
+                cost_basis=170.0,
+                opened_on=date(2026, 5, 1),
+                acquisition_source=sm.ACQUISITION_OPEN_MARKET,
+                expiration=date(2026, 6, 19),
+                strike=180.0,
+                contracts=2,
+                credit=2.40,
+            ),
+        )
+
+
+def test_open_covered_call_fresh_rejects_bad_dates(db: None) -> None:
+    with (
+        get_session() as session,
+        pytest.raises(sm.InvalidLegError, match="expiration"),
+    ):
+        sm.open_covered_call_fresh(
+            session,
+            sm.OpenCoveredCallFreshInput(
+                symbol="AAPL",
+                shares=100,
+                cost_basis=170.0,
+                opened_on=date(2026, 6, 20),
+                acquisition_source=sm.ACQUISITION_OPEN_MARKET,
+                expiration=date(2026, 6, 19),
+                strike=180.0,
+                contracts=1,
+                credit=2.40,
+            ),
+        )
+
+
 def test_open_call_too_many_contracts(db: None) -> None:
     pid = _open_put(contracts=1)
     with get_session() as session:

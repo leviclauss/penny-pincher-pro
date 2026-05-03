@@ -21,6 +21,7 @@ class Position(Base):
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    acquisition_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class PositionLeg(Base):

@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import { fetchPositions } from "@/api/client";
 import type { PositionLegOut, PositionOut, PositionState } from "@/api/types";
 import { Button } from "@/components/ui/Button";
@@ -14,10 +14,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/Table";
+import { OpenCoveredCallDialog } from "@/components/positions/OpenCoveredCallDialog";
+import { OpenLongSharesDialog } from "@/components/positions/OpenLongSharesDialog";
 import { OpenShortPutDialog } from "@/components/positions/OpenShortPutDialog";
 import { cn } from "@/lib/utils";
 import { formatDate, formatNumber } from "@/lib/format";
 import { STATE_LABELS, STATE_TONES, formatCurrency, pnlTone } from "@/lib/positions";
+
+type OpenDialog = null | "short_put" | "long_shares" | "covered_call";
 
 type FilterValue = "all" | "open" | PositionState;
 
@@ -75,7 +79,7 @@ function StateBadge({ state }: { state: string }): JSX.Element {
 export function Positions(): JSX.Element {
   const navigate = useNavigate();
   const [filter, setFilter] = useState<FilterValue>("open");
-  const [openDialog, setOpenDialog] = useState(false);
+  const [openDialog, setOpenDialog] = useState<OpenDialog>(null);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["positions", "list"],
@@ -118,10 +122,7 @@ export function Positions(): JSX.Element {
             run; trigger it from the Jobs page if numbers look stale.
           </p>
         </div>
-        <Button onClick={() => setOpenDialog(true)}>
-          <Plus className="mr-1 h-4 w-4" />
-          Open short put
-        </Button>
+        <AddPositionMenu onChoose={setOpenDialog} />
       </header>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -272,7 +273,95 @@ export function Positions(): JSX.Element {
         </CardContent>
       </Card>
 
-      <OpenShortPutDialog open={openDialog} onOpenChange={setOpenDialog} />
+      <OpenShortPutDialog
+        open={openDialog === "short_put"}
+        onOpenChange={(o) => !o && setOpenDialog(null)}
+      />
+      <OpenLongSharesDialog
+        open={openDialog === "long_shares"}
+        onOpenChange={(o) => !o && setOpenDialog(null)}
+      />
+      <OpenCoveredCallDialog
+        open={openDialog === "covered_call"}
+        onOpenChange={(o) => !o && setOpenDialog(null)}
+      />
+    </div>
+  );
+}
+
+interface AddPositionMenuProps {
+  onChoose: (type: Exclude<OpenDialog, null>) => void;
+}
+
+const ADD_POSITION_OPTIONS: {
+  type: Exclude<OpenDialog, null>;
+  label: string;
+  hint: string;
+}[] = [
+  { type: "short_put", label: "Short put", hint: "Sell a cash-secured put" },
+  {
+    type: "long_shares",
+    label: "Long shares",
+    hint: "Track shares you already own",
+  },
+  {
+    type: "covered_call",
+    label: "Covered call",
+    hint: "Shares you own with a call written",
+  },
+];
+
+function AddPositionMenu({ onChoose }: AddPositionMenuProps): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <Button onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open}>
+        <Plus className="mr-1 h-4 w-4" />
+        Add position
+        <ChevronDown className="ml-1 h-4 w-4 opacity-70" />
+      </Button>
+      {open && (
+        <div
+          role="menu"
+          className="border-border bg-popover absolute right-0 z-20 mt-1 w-64 overflow-hidden rounded-md border shadow-lg"
+        >
+          {ADD_POSITION_OPTIONS.map((opt) => (
+            <button
+              key={opt.type}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onChoose(opt.type);
+              }}
+              className="hover:bg-accent flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors"
+            >
+              <span className="text-foreground text-sm font-medium">
+                {opt.label}
+              </span>
+              <span className="text-muted-foreground text-xs">{opt.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

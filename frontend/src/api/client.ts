@@ -11,7 +11,9 @@ import type {
   JobInfoOut,
   JobRunOut,
   MacroPoint,
+  OpenCoveredCallFreshInput,
   OpenCoveredCallInput,
+  OpenLongSharesInput,
   OpenShortPutInput,
   PositionAttributionOut,
   PositionOut,
@@ -249,6 +251,20 @@ export function fetchPositionAttribution(
 
 export function openShortPut(input: OpenShortPutInput): Promise<PositionOut> {
   return mutateJson<PositionOut>("POST", "/api/positions/short-put", input).then(
+    (r) => r as PositionOut,
+  );
+}
+
+export function openLongShares(input: OpenLongSharesInput): Promise<PositionOut> {
+  return mutateJson<PositionOut>("POST", "/api/positions/long-shares", input).then(
+    (r) => r as PositionOut,
+  );
+}
+
+export function openCoveredCallFresh(
+  input: OpenCoveredCallFreshInput,
+): Promise<PositionOut> {
+  return mutateJson<PositionOut>("POST", "/api/positions/covered-call", input).then(
     (r) => r as PositionOut,
   );
 }
