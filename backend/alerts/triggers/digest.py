@@ -213,6 +213,7 @@ def _positions_attention(session: Session, *, today: date) -> list[dict[str, Any
 
     return [
         {
+            "position_id": pid,
             "symbol": symbol_by_position[pid],
             "note": ", ".join(_humanize(t) for t in triggers),
         }
@@ -236,6 +237,7 @@ def _positions_pnl(session: Session) -> list[dict[str, Any]]:
         snapshot = _latest_snapshot(session, position.id)
         rows.append(
             {
+                "position_id": position.id,
                 "symbol": position.symbol,
                 "state": position.state,
                 "unrealized_pnl": (

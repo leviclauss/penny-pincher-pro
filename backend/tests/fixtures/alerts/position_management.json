@@ -1,0 +1,7 @@
+{
+  "rule": "pct_max_profit",
+  "position_id": 42,
+  "symbol": "AAPL",
+  "pct_max_profit": 0.52,
+  "threshold": 0.50
+}

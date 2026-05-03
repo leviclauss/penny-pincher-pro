@@ -55,9 +55,21 @@ def _build_env(parse_mode: str) -> Environment:
     return env
 
 
-def render(alert_type: str, payload: dict[str, Any], *, parse_mode: str) -> str:
-    """Render the named template with ``payload``. Trailing whitespace is stripped."""
+def render(
+    alert_type: str,
+    payload: dict[str, Any],
+    *,
+    parse_mode: str,
+    web_base_url: str = "",
+) -> str:
+    """Render the named template with ``payload``. Trailing whitespace is stripped.
+
+    ``web_base_url`` is exposed to templates as a global so they can render
+    "Open in app" deep links when the deployment publishes a UI hostname.
+    Empty string (the default) suppresses link rendering.
+    """
     env = _build_env(parse_mode)
+    env.globals["web_base_url"] = web_base_url.rstrip("/")
     template = env.get_template(f"{alert_type}.md.j2")
     return template.render(**payload).strip()
 

@@ -23,6 +23,7 @@ FIXTURES_DIR = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "ale
 FIXTURE = FIXTURES_DIR / "morning_digest.json"
 SETUP_FIXTURE = FIXTURES_DIR / "setup_triggered.json"
 IV_SPIKE_FIXTURE = FIXTURES_DIR / "iv_spike.json"
+POSITION_MANAGEMENT_FIXTURE = FIXTURES_DIR / "position_management.json"
 
 
 def test_escape_markdown_v2_handles_all_specials() -> None:
@@ -92,3 +93,70 @@ def test_render_iv_spike_snapshot(snapshot: SnapshotAssertion) -> None:
     payload = json.loads(IV_SPIKE_FIXTURE.read_text())
     output = render("iv_spike", payload, parse_mode="MarkdownV2")
     assert output == snapshot
+
+
+def test_render_position_management_snapshot(snapshot: SnapshotAssertion) -> None:
+    payload = json.loads(POSITION_MANAGEMENT_FIXTURE.read_text())
+    output = render("position_management", payload, parse_mode="MarkdownV2")
+    assert output == snapshot
+
+
+_POSITION_RULE_PAYLOADS: dict[str, dict[str, float | int]] = {
+    "pct_max_profit": {"pct_max_profit": 0.62, "threshold": 0.50},
+    "dte": {"dte": 14, "threshold": 21},
+    "delta_breach": {"delta": -0.48, "threshold": 0.45},
+    "near_strike": {
+        "underlying": 169.50,
+        "strike": 170.00,
+        "diff_pct": 0.0029,
+        "threshold": 0.02,
+    },
+    "cc_itm_short_dte": {"dte": 5, "underlying": 178.20, "strike": 175.00},
+    "stale_position": {"days_open": 73, "threshold": 60},
+}
+
+
+def test_render_position_management_all_rules() -> None:
+    """Every supported rule renders without StrictUndefined errors."""
+    for rule, extras in _POSITION_RULE_PAYLOADS.items():
+        payload: dict[str, object] = {
+            "rule": rule,
+            "position_id": 7,
+            "symbol": "AAPL",
+            **extras,
+        }
+        output = render("position_management", payload, parse_mode="MarkdownV2")
+        assert output.startswith("*Position Alert*"), f"rule={rule}: {output!r}"
+        # No literal Jinja markup leaks through.
+        assert "{%" not in output
+        assert "{{" not in output
+
+
+def test_render_morning_digest_with_web_base_url() -> None:
+    """Deep links appear when web_base_url is set; the URL is left raw."""
+    payload = json.loads(FIXTURE.read_text())
+    output = render(
+        "morning_digest",
+        payload,
+        parse_mode="MarkdownV2",
+        web_base_url="https://wheel.example.ts.net",
+    )
+    assert "[open](https://wheel.example.ts.net/tickers/AAPL)" in output
+    assert "[open](https://wheel.example.ts.net/tickers/MSFT)" in output
+
+
+def test_render_position_management_with_web_base_url() -> None:
+    payload = json.loads(POSITION_MANAGEMENT_FIXTURE.read_text())
+    output = render(
+        "position_management",
+        payload,
+        parse_mode="MarkdownV2",
+        web_base_url="https://wheel.example.ts.net/",  # trailing slash gets normalized
+    )
+    assert "[open](https://wheel.example.ts.net/positions/42)" in output
+
+
+def test_render_skips_links_when_web_base_url_blank() -> None:
+    payload = json.loads(FIXTURE.read_text())
+    output = render("morning_digest", payload, parse_mode="MarkdownV2")
+    assert "[open]" not in output
