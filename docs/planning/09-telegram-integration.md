@@ -263,13 +263,18 @@ to `message` and `callback_query`; other update types ignored.
 
 Initial commands, all read-only and reusing existing API handlers:
 
-| Command | Backend call | Notes |
-|---|---|---|
-| `/status` | `GET /api/system/health` | "Last bar 2026-05-02, 47 symbols, evening job ok 6h ago." |
-| `/macro` | `GET /api/macro/current` | One-line VIX / VIX9D / term / SPY regime. |
-| `/earnings` | `GET /api/earnings/upcoming?days=7` | Watchlist earnings next 7 days. |
-| `/snooze SYMBOL HOURS` | new `alerts/snooze.py` table | Suppresses alerts for symbol until expiry. |
-| `/help` | static | Lists the above. |
+| Command | Backend call | Status | Notes |
+|---|---|---|---|
+| `/status` | `GET /api/system/health` | shipped | Last bar, recent jobs, unacked count, snooze cutoff. |
+| `/snooze 30m\|2h\|1d` | upserts `alert_preferences.__global__` | shipped | Global only. |
+| `/macro` | `GET /api/macro/current` | shipped | One-line VIX / VIX9D / term / SPY regime. |
+| `/earnings [N]` | `GET /api/earnings/upcoming?days=N` | shipped | Watchlist earnings in next N days (default 7, max 30). |
+| `/positions` | `GET /api/positions` | shipped | Open wheel positions with latest leg + snapshot (mark / P&L / DTE). |
+| `/ticker SYM` | filtered version of `GET /api/tickers` | shipped | Last close + day Δ, EMA200 distance, RSI(14), IV ATM / rank / percentile, next earnings. |
+| `/alerts [N]` | `GET /api/alerts?limit=N` | shipped | Last N alerts (default 10, max 25). |
+| `/jobs` | `GET /api/system/job-runs` | shipped | Latest run per scheduled job. |
+| `/snooze SYMBOL HOURS` | new `alerts/snooze.py` table | deferred | Per-symbol snooze; needs a schema migration (composite PK on `alert_preferences` or sibling table) and a dispatcher change. |
+| `/help` | static | shipped | Lists the above. |
 
 Authorization: every update's `effective_chat.id` must equal
 `TELEGRAM_CHAT_ID`. Anything else gets a single "unauthorized" reply and

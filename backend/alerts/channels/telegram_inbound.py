@@ -19,7 +19,7 @@ import re
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -33,7 +33,8 @@ from core.logging import get_logger
 from core.time import utcnow
 from db import get_session
 from db.models.alerts import Alert, AlertPreference
-from db.models.market import BarDaily
+from db.models.market import BarDaily, Earnings, IndicatorDaily, MacroDaily, Ticker
+from db.models.positions import Position, PositionLeg, PositionSnapshot
 from db.models.system import BotState, JobRun
 
 log = get_logger(__name__)
@@ -48,6 +49,16 @@ _DURATION_UNITS = {
     "h": "hours",
     "d": "days",
 }
+
+# Mirrors backend/api/tickers.py:_SYMBOL_RE — duplicated to keep alerts→api
+# imports out of the inbound bot.
+_SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,15}$")
+
+_DEFAULT_EARNINGS_DAYS = 7
+_MAX_EARNINGS_DAYS = 30
+_DEFAULT_ALERTS_LIMIT = 10
+_MAX_ALERTS_LIMIT = 25
+_MAX_LIST_ROWS = 25
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +80,28 @@ def parse_snooze_duration(arg: str) -> timedelta | None:
         return None
     kw = {_DURATION_UNITS[unit.lower()]: n}
     return timedelta(**kw)
+
+
+def _parse_int_arg(arg: str, *, default: int, max_value: int) -> int:
+    """Parse an optional integer arg; clamp to ``[1, max_value]`` or fall back."""
+    s = arg.strip()
+    if not s:
+        return default
+    try:
+        n = int(s)
+    except ValueError:
+        return default
+    if n < 1:
+        return default
+    return min(n, max_value)
+
+
+def _parse_symbol_arg(arg: str) -> str | None:
+    """Uppercase + validate; returns None if the arg isn't a plausible symbol."""
+    s = arg.strip().upper()
+    if not s or not _SYMBOL_RE.match(s):
+        return None
+    return s
 
 
 class TelegramInboundBot:
@@ -207,7 +240,7 @@ class TelegramInboundBot:
             return self._handle_message(update["message"])
         return HandledUpdate(kind="ignored", detail="no_handler")
 
-    def _handle_message(self, message: dict[str, Any]) -> HandledUpdate:
+    def _handle_message(self, message: dict[str, Any]) -> HandledUpdate:  # noqa: PLR0911
         chat = message.get("chat") or {}
         chat_id = chat.get("id")
         if not self._is_authorized(chat_id):
@@ -231,6 +264,33 @@ class TelegramInboundBot:
             reply = _apply_snooze(arg, now=self._clock())
             self._reply(chat_id, reply)
             return HandledUpdate(kind="command", detail=f"snooze:{arg}")
+        if cmd == "/macro":
+            self._reply(chat_id, _build_macro_reply())
+            return HandledUpdate(kind="command", detail="macro")
+        if cmd == "/earnings":
+            days = _parse_int_arg(arg, default=_DEFAULT_EARNINGS_DAYS, max_value=_MAX_EARNINGS_DAYS)
+            self._reply(chat_id, _build_earnings_reply(days))
+            return HandledUpdate(kind="command", detail=f"earnings:{days}")
+        if cmd == "/positions":
+            self._reply(chat_id, _build_positions_reply())
+            return HandledUpdate(kind="command", detail="positions")
+        if cmd == "/ticker":
+            symbol = _parse_symbol_arg(arg)
+            if symbol is None:
+                self._reply(
+                    chat_id,
+                    escape_markdown_v2("Usage: /ticker SYMBOL (e.g. /ticker AAPL)"),
+                )
+                return HandledUpdate(kind="command", detail="ticker:bad_arg")
+            self._reply(chat_id, _build_ticker_reply(symbol))
+            return HandledUpdate(kind="command", detail=f"ticker:{symbol}")
+        if cmd == "/alerts":
+            limit = _parse_int_arg(arg, default=_DEFAULT_ALERTS_LIMIT, max_value=_MAX_ALERTS_LIMIT)
+            self._reply(chat_id, _build_alerts_reply(limit))
+            return HandledUpdate(kind="command", detail=f"alerts:{limit}")
+        if cmd == "/jobs":
+            self._reply(chat_id, _build_jobs_reply())
+            return HandledUpdate(kind="command", detail="jobs")
         if cmd == "/help":
             self._reply(chat_id, _help_text())
             return HandledUpdate(kind="command", detail="help")
@@ -375,6 +435,16 @@ def _help_text() -> str:
     """Return the static MarkdownV2-escaped help blurb."""
     body = (
         "Penny Pincher commands:\n"
+        "\n"
+        "Data:\n"
+        "/macro — VIX, term structure, SPY regime\n"
+        "/earnings [N] — watchlist earnings in next N days (default 7, max 30)\n"
+        "/positions — open wheel positions with mark + P&L\n"
+        "/ticker SYM — last close, RSI, IV, next earnings\n"
+        "/alerts [N] — last N alerts (default 10, max 25)\n"
+        "/jobs — last run per scheduled job\n"
+        "\n"
+        "State:\n"
         "/status — last bar, recent jobs, unacked alerts\n"
         "/snooze 30m|2h|1d — silence all alerts for the duration\n"
         "/snooze off — clear an active snooze\n"
@@ -441,6 +511,294 @@ def _build_status_reply() -> str:
             )
 
     return "\n".join(lines)
+
+
+def _build_macro_reply() -> str:
+    """Latest VIX / VIX9D / term / SPY-vs-200EMA snapshot, one short block."""
+    with get_session() as session:
+        row = session.execute(
+            select(MacroDaily).order_by(MacroDaily.date.desc()).limit(1)
+        ).scalar_one_or_none()
+
+    if row is None:
+        return escape_markdown_v2("No macro snapshot yet.")
+
+    lines: list[str] = ["*Macro*"]
+    lines.append(escape_markdown_v2(f"Date: {row.date.isoformat()}"))
+    lines.append(escape_markdown_v2(f"VIX: {_fmt_float(row.vix_close, 2)}"))
+    lines.append(escape_markdown_v2(f"VIX9D: {_fmt_float(row.vix_9d, 2)}"))
+
+    term_marker = ""
+    if row.vix_term_structure is not None:
+        term_marker = " (backwardation)" if row.vix_term_structure < 1 else " (contango)"
+    lines.append(escape_markdown_v2(f"Term: {_fmt_float(row.vix_term_structure, 3)}{term_marker}"))
+
+    spy_close = _fmt_float(row.spy_close, 2)
+    spy_ema = _fmt_float(row.spy_ema_200, 2)
+    lines.append(escape_markdown_v2(f"SPY: ${spy_close} (EMA200 ${spy_ema})"))
+    if row.spy_above_200ema is not None:
+        regime = "above 200EMA" if row.spy_above_200ema else "below 200EMA"
+        lines.append(escape_markdown_v2(f"Regime: {regime}"))
+
+    return "\n".join(lines)
+
+
+def _build_earnings_reply(days: int) -> str:
+    """Watchlist earnings within ``[today, today + days]``, oldest first."""
+    today = date.today()
+    end = today + timedelta(days=days)
+    with get_session() as session:
+        rows = session.execute(
+            select(Earnings, Ticker)
+            .join(Ticker, Earnings.symbol == Ticker.symbol)
+            .where(Ticker.is_active.is_(True))
+            .where(Earnings.earnings_date >= today)
+            .where(Earnings.earnings_date <= end)
+            .order_by(Earnings.earnings_date, Earnings.symbol)
+        ).all()
+
+    title = f"*Earnings (next {days}d)*"
+    if not rows:
+        return "\n".join([title, escape_markdown_v2("No upcoming earnings.")])
+
+    lines: list[str] = [title]
+    visible = rows[:_MAX_LIST_ROWS]
+    for earnings, _ticker in visible:
+        when = earnings.time_of_day or "—"
+        lines.append(
+            escape_markdown_v2(f"{earnings.symbol}  {earnings.earnings_date.isoformat()}  {when}")
+        )
+    if len(rows) > _MAX_LIST_ROWS:
+        lines.append(escape_markdown_v2(f"... and {len(rows) - _MAX_LIST_ROWS} more."))
+    return "\n".join(lines)
+
+
+def _build_positions_reply() -> str:
+    """Open wheel positions with their most recent leg + snapshot."""
+    with get_session() as session:
+        positions = (
+            session.execute(
+                select(Position)
+                .where(Position.state != "closed")
+                .order_by(Position.opened_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        if not positions:
+            return "\n".join(["*Open positions*", escape_markdown_v2("No open positions.")])
+
+        ids = [p.id for p in positions]
+        legs_by_pos: dict[int, list[PositionLeg]] = {pid: [] for pid in ids}
+        for leg in (
+            session.execute(
+                select(PositionLeg)
+                .where(PositionLeg.position_id.in_(ids))
+                .order_by(PositionLeg.position_id, PositionLeg.id)
+            )
+            .scalars()
+            .all()
+        ):
+            legs_by_pos.setdefault(leg.position_id, []).append(leg)
+
+        # Latest snapshot per position via a max(snapshot_at) subquery.
+        latest_snap_subq = (
+            select(
+                PositionSnapshot.position_id,
+                func.max(PositionSnapshot.snapshot_at).label("max_at"),
+            )
+            .where(PositionSnapshot.position_id.in_(ids))
+            .group_by(PositionSnapshot.position_id)
+            .subquery()
+        )
+        snaps_by_pos: dict[int, PositionSnapshot] = {}
+        for snap in (
+            session.execute(
+                select(PositionSnapshot).join(
+                    latest_snap_subq,
+                    (PositionSnapshot.position_id == latest_snap_subq.c.position_id)
+                    & (PositionSnapshot.snapshot_at == latest_snap_subq.c.max_at),
+                )
+            )
+            .scalars()
+            .all()
+        ):
+            snaps_by_pos[snap.position_id] = snap
+
+    lines: list[str] = ["*Open positions*"]
+    for p in positions:
+        leg_str = _latest_open_leg_str(legs_by_pos.get(p.id, []))
+        latest = snaps_by_pos.get(p.id)
+        mark_str = f"${_fmt_float(latest.option_mid, 2)}" if latest else "—"
+        pnl_str = f"${_fmt_float(latest.unrealized_pnl, 2)}" if latest else "—"
+        dte_str = str(latest.dte) if latest and latest.dte is not None else "—"
+        lines.append(
+            escape_markdown_v2(
+                f"{p.symbol}  {p.state}  {leg_str}  mark {mark_str}  P&L {pnl_str}  DTE {dte_str}"
+            )
+        )
+    return "\n".join(lines)
+
+
+def _latest_open_leg_str(legs: list[PositionLeg]) -> str:
+    """Single-line shorthand for the most recently created open leg."""
+    open_legs = [leg for leg in legs if leg.outcome == "open" or leg.outcome is None]
+    if not open_legs:
+        return "no open leg"
+    leg = open_legs[-1]
+    if leg.leg_type == "shares":
+        return f"shares x {leg.shares or 0}"
+    strike = _fmt_float(leg.strike, 2) if leg.strike is not None else "—"
+    exp = leg.expiration.isoformat() if leg.expiration else "—"
+    return f"{leg.leg_type} ${strike} {exp}"
+
+
+def _build_ticker_reply(symbol: str) -> str:
+    """Per-symbol summary: last close + day delta, EMA200, RSI, IV, next earnings."""
+    today = date.today()
+    with get_session() as session:
+        ticker = session.get(Ticker, symbol)
+        if ticker is None:
+            return escape_markdown_v2(f"Unknown symbol: {symbol}")
+
+        bars = (
+            session.execute(
+                select(BarDaily)
+                .where(BarDaily.symbol == symbol)
+                .order_by(BarDaily.date.desc())
+                .limit(2)
+            )
+            .scalars()
+            .all()
+        )
+        ind: IndicatorDaily | None = None
+        if bars:
+            ind = session.execute(
+                select(IndicatorDaily).where(
+                    IndicatorDaily.symbol == symbol,
+                    IndicatorDaily.date == bars[0].date,
+                )
+            ).scalar_one_or_none()
+
+        next_earnings = session.execute(
+            select(func.min(Earnings.earnings_date))
+            .where(Earnings.symbol == symbol)
+            .where(Earnings.earnings_date >= today)
+        ).scalar_one_or_none()
+
+    name_suffix = f" ({ticker.name})" if ticker.name else ""
+    lines: list[str] = [f"*{escape_markdown_v2(symbol)}*{escape_markdown_v2(name_suffix)}"]
+
+    if not bars:
+        lines.append(escape_markdown_v2("No bars yet."))
+        return "\n".join(lines)
+
+    last = bars[0]
+    prev = bars[1] if len(bars) > 1 else None
+    delta_str = "—"
+    if prev is not None and prev.close:
+        pct = (last.close - prev.close) / prev.close * 100
+        delta_str = f"{pct:+.2f}%"
+    lines.append(
+        escape_markdown_v2(f"Close: ${last.close:.2f}  ({delta_str})  on {last.date.isoformat()}")
+    )
+
+    if ind is not None and ind.ema_200 is not None:
+        ema_pct = (last.close - ind.ema_200) / ind.ema_200 * 100
+        side = "above" if ema_pct >= 0 else "below"
+        lines.append(
+            escape_markdown_v2(f"EMA200: ${ind.ema_200:.2f}  ({side} by {abs(ema_pct):.1f}%)")
+        )
+    else:
+        lines.append(escape_markdown_v2("EMA200: —"))
+
+    rsi = ind.rsi_14 if ind else None
+    lines.append(escape_markdown_v2(f"RSI(14): {_fmt_float(rsi, 1)}"))
+
+    iv_atm = ind.iv_atm if ind else None
+    iv_atm_str = f"{iv_atm * 100:.1f}%" if iv_atm is not None else "—"
+    lines.append(escape_markdown_v2(f"IV ATM: {iv_atm_str}"))
+
+    iv_rank = ind.iv_rank if ind else None
+    iv_pct = ind.iv_percentile if ind else None
+    lines.append(
+        escape_markdown_v2(
+            f"IV rank: {_fmt_float(iv_rank, 1)}  /  percentile: {_fmt_float(iv_pct, 1)}"
+        )
+    )
+
+    earnings_str = next_earnings.isoformat() if next_earnings else "—"
+    lines.append(escape_markdown_v2(f"Next earnings: {earnings_str}"))
+
+    return "\n".join(lines)
+
+
+def _build_alerts_reply(limit: int) -> str:
+    """Last ``limit`` alerts in reverse chronological order."""
+    with get_session() as session:
+        rows = (
+            session.execute(select(Alert).order_by(Alert.triggered_at.desc()).limit(limit))
+            .scalars()
+            .all()
+        )
+
+    title = "*Recent alerts*"
+    if not rows:
+        return "\n".join([title, escape_markdown_v2("No alerts yet.")])
+
+    lines: list[str] = [title]
+    for alert in rows:
+        when = alert.triggered_at
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        mark = "✓" if alert.user_acked else "·"
+        symbol = alert.symbol or "—"
+        lines.append(
+            escape_markdown_v2(
+                f"{mark} {when.astimezone(UTC).strftime('%m-%d %H:%M')}  "
+                f"{alert.alert_type}  {symbol}"
+            )
+        )
+    return "\n".join(lines)
+
+
+def _build_jobs_reply() -> str:
+    """Latest run per scheduled job: status, age, duration."""
+    with get_session() as session:
+        latest_ids_subq = (
+            select(func.max(JobRun.id).label("id")).group_by(JobRun.job_name).subquery()
+        )
+        rows = (
+            session.execute(
+                select(JobRun)
+                .join(latest_ids_subq, JobRun.id == latest_ids_subq.c.id)
+                .order_by(JobRun.job_name)
+            )
+            .scalars()
+            .all()
+        )
+
+    title = "*Jobs*"
+    if not rows:
+        return "\n".join([title, escape_markdown_v2("No job runs yet.")])
+
+    lines: list[str] = [title]
+    for r in rows:
+        when = r.ended_at or r.started_at
+        age = _humanize_age(when) if when is not None else "never"
+        duration = "—"
+        if r.started_at is not None and r.ended_at is not None:
+            start = r.started_at if r.started_at.tzinfo else r.started_at.replace(tzinfo=UTC)
+            end = r.ended_at if r.ended_at.tzinfo else r.ended_at.replace(tzinfo=UTC)
+            duration = f"{(end - start).total_seconds():.1f}s"
+        lines.append(escape_markdown_v2(f"- {r.job_name}: {r.status} ({age}, {duration})"))
+    return "\n".join(lines)
+
+
+def _fmt_float(value: float | None, places: int) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.{places}f}"
 
 
 def _humanize_age(when: datetime) -> str:

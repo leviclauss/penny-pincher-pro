@@ -30,12 +30,15 @@ from alerts.channels.base import Channel, ChannelResult
 from alerts.channels.telegram_inbound import (
     OFFSET_KEY,
     TelegramInboundBot,
+    _parse_int_arg,
+    _parse_symbol_arg,
     parse_snooze_duration,
 )
 from alerts.dispatcher import GLOBAL_SNOOZE_KEY, dispatch
 from db import get_session
 from db.models.alerts import Alert, AlertPreference
-from db.models.market import BarDaily, Ticker
+from db.models.market import BarDaily, Earnings, IndicatorDaily, MacroDaily, Ticker
+from db.models.positions import Position, PositionLeg, PositionSnapshot
 from db.models.system import BotState, JobRun
 
 ALLOWED_CHAT_ID = "42"
@@ -474,3 +477,426 @@ def test_ack_missing_alert_returns_friendly_text(db: None) -> None:
 
     body = json.loads(answer.calls.last.request.content)
     assert "not found" in body["text"].lower()
+
+
+# ----------------------------------------------------------------------
+# Arg-parsing helpers
+# ----------------------------------------------------------------------
+def test_parse_int_arg_clamps_and_falls_back() -> None:
+    assert _parse_int_arg("", default=7, max_value=30) == 7
+    assert _parse_int_arg("abc", default=7, max_value=30) == 7
+    assert _parse_int_arg("0", default=7, max_value=30) == 7
+    assert _parse_int_arg("3", default=7, max_value=30) == 3
+    assert _parse_int_arg("999", default=7, max_value=30) == 30
+
+
+def test_parse_symbol_arg_normalises_and_validates() -> None:
+    assert _parse_symbol_arg("aapl") == "AAPL"
+    assert _parse_symbol_arg("  msft  ") == "MSFT"
+    assert _parse_symbol_arg("BRK.B") == "BRK.B"
+    assert _parse_symbol_arg("") is None
+    assert _parse_symbol_arg("123") is None
+    assert _parse_symbol_arg("toolongsymbolname1") is None
+
+
+# ----------------------------------------------------------------------
+# /macro command
+# ----------------------------------------------------------------------
+def _mock_send_message() -> respx.Route:
+    return respx.post(f"{BASE}/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
+    )
+
+
+def _mock_get_updates(updates: list[dict[str, Any]]) -> respx.Route:
+    return respx.get(f"{BASE}/getUpdates").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": updates})
+    )
+
+
+@respx.mock
+def test_macro_command_renders_latest_snapshot(db: None) -> None:
+    with get_session() as session:
+        session.add(
+            MacroDaily(
+                date=date(2026, 5, 2),
+                vix_close=14.25,
+                vix_9d=13.10,
+                vix_term_structure=0.92,
+                spy_close=520.50,
+                spy_ema_200=480.10,
+                spy_above_200ema=True,
+            )
+        )
+
+    _mock_get_updates([_message_update("/macro")])
+    reply = _mock_send_message()
+
+    bot = _make_bot()
+    handled = bot.poll_once()
+    assert handled == 1
+
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "Macro" in text
+    assert "14\\.25" in text
+    assert "backwardation" in text
+    assert "above 200EMA" in text
+
+
+@respx.mock
+def test_macro_command_handles_empty(db: None) -> None:
+    _mock_get_updates([_message_update("/macro")])
+    reply = _mock_send_message()
+
+    bot = _make_bot()
+    bot.poll_once()
+
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "No macro snapshot" in text
+
+
+# ----------------------------------------------------------------------
+# /earnings command
+# ----------------------------------------------------------------------
+@respx.mock
+def test_earnings_command_lists_upcoming(db: None) -> None:
+    today = date.today()
+    with get_session() as session:
+        session.add(Ticker(symbol="AAPL", is_active=True))
+        session.add(Ticker(symbol="MSFT", is_active=True))
+        session.add(
+            Earnings(
+                symbol="AAPL",
+                earnings_date=today + timedelta(days=2),
+                time_of_day="AMC",
+            )
+        )
+        session.add(
+            Earnings(
+                symbol="MSFT",
+                earnings_date=today + timedelta(days=5),
+                time_of_day="BMO",
+            )
+        )
+        # Outside window
+        session.add(Earnings(symbol="AAPL", earnings_date=today + timedelta(days=20)))
+
+    _mock_get_updates([_message_update("/earnings")])
+    reply = _mock_send_message()
+
+    bot = _make_bot()
+    bot.poll_once()
+
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "Earnings" in text
+    assert "AAPL" in text
+    assert "MSFT" in text
+    assert "AMC" in text
+    assert "BMO" in text
+
+
+@respx.mock
+def test_earnings_command_respects_arg(db: None) -> None:
+    today = date.today()
+    with get_session() as session:
+        session.add(Ticker(symbol="AAPL", is_active=True))
+        session.add(Earnings(symbol="AAPL", earnings_date=today + timedelta(days=14)))
+
+    # 7-day default would not include the day-14 row.
+    _mock_get_updates([_message_update("/earnings 21")])
+    reply = _mock_send_message()
+    bot = _make_bot()
+    bot.poll_once()
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "AAPL" in text
+    assert "21d" in text
+
+
+@respx.mock
+def test_earnings_command_empty(db: None) -> None:
+    _mock_get_updates([_message_update("/earnings")])
+    reply = _mock_send_message()
+    bot = _make_bot()
+    bot.poll_once()
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "No upcoming earnings" in text
+
+
+# ----------------------------------------------------------------------
+# /positions command
+# ----------------------------------------------------------------------
+@respx.mock
+def test_positions_command_renders_open_only(db: None) -> None:
+    with get_session() as session:
+        open_pos = Position(
+            symbol="AAPL",
+            state="short_put",
+            opened_at=datetime.now(UTC) - timedelta(days=3),
+        )
+        closed_pos = Position(
+            symbol="MSFT",
+            state="closed",
+            opened_at=datetime.now(UTC) - timedelta(days=10),
+            closed_at=datetime.now(UTC) - timedelta(days=1),
+        )
+        session.add(open_pos)
+        session.add(closed_pos)
+        session.flush()
+        session.add(
+            PositionLeg(
+                position_id=open_pos.id,
+                leg_type="short_put",
+                symbol="AAPL",
+                expiration=date(2026, 6, 19),
+                strike=170.0,
+                contracts=1,
+                entry_price=2.50,
+                outcome="open",
+            )
+        )
+        session.add(
+            PositionSnapshot(
+                position_id=open_pos.id,
+                snapshot_at=datetime.now(UTC),
+                option_mid=1.20,
+                unrealized_pnl=130.0,
+                dte=47,
+            )
+        )
+
+    _mock_get_updates([_message_update("/positions")])
+    reply = _mock_send_message()
+    bot = _make_bot()
+    bot.poll_once()
+
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "Open positions" in text
+    assert "AAPL" in text
+    assert "MSFT" not in text  # closed
+    assert "47" in text  # DTE
+
+
+@respx.mock
+def test_positions_command_empty(db: None) -> None:
+    _mock_get_updates([_message_update("/positions")])
+    reply = _mock_send_message()
+    bot = _make_bot()
+    bot.poll_once()
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "No open positions" in text
+
+
+# ----------------------------------------------------------------------
+# /ticker command
+# ----------------------------------------------------------------------
+@respx.mock
+def test_ticker_command_renders_summary(db: None) -> None:
+    today = date(2026, 5, 2)
+    with get_session() as session:
+        session.add(Ticker(symbol="AAPL", name="Apple Inc.", is_active=True))
+        session.add(
+            BarDaily(symbol="AAPL", date=today, open=170, high=172, low=168, close=170.5, volume=1)
+        )
+        session.add(
+            BarDaily(
+                symbol="AAPL",
+                date=today - timedelta(days=1),
+                open=168,
+                high=170,
+                low=167,
+                close=168.0,
+                volume=1,
+            )
+        )
+        session.add(
+            IndicatorDaily(
+                symbol="AAPL",
+                date=today,
+                ema_200=160.0,
+                rsi_14=55.5,
+                iv_atm=0.28,
+                iv_rank=42.0,
+                iv_percentile=51.0,
+            )
+        )
+        session.add(Earnings(symbol="AAPL", earnings_date=date.today() + timedelta(days=10)))
+
+    _mock_get_updates([_message_update("/ticker AAPL")])
+    reply = _mock_send_message()
+    bot = _make_bot()
+    bot.poll_once()
+
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "AAPL" in text
+    assert "Apple Inc" in text
+    assert "170\\.50" in text  # close
+    assert "above" in text  # EMA200 side
+    assert "55\\.5" in text  # RSI
+    assert "28\\.0%" in text  # IV ATM
+
+
+@respx.mock
+def test_ticker_command_unknown_symbol(db: None) -> None:
+    _mock_get_updates([_message_update("/ticker BOGUS")])
+    reply = _mock_send_message()
+    bot = _make_bot()
+    bot.poll_once()
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "Unknown symbol" in text
+
+
+@respx.mock
+def test_ticker_command_missing_arg(db: None) -> None:
+    _mock_get_updates([_message_update("/ticker")])
+    reply = _mock_send_message()
+    bot = _make_bot()
+    bot.poll_once()
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "Usage" in text
+
+
+# ----------------------------------------------------------------------
+# /alerts command
+# ----------------------------------------------------------------------
+@respx.mock
+def test_alerts_command_renders_recent(db: None) -> None:
+    with get_session() as session:
+        session.add(
+            Alert(
+                alert_type="setup_triggered",
+                symbol="AAPL",
+                payload_json={"symbol": "AAPL"},
+                triggered_at=datetime(2026, 5, 2, 13, 30, tzinfo=UTC),
+                user_acked=True,
+            )
+        )
+        session.add(
+            Alert(
+                alert_type="iv_spike",
+                symbol="MSFT",
+                payload_json={"symbol": "MSFT"},
+                triggered_at=datetime(2026, 5, 2, 14, 45, tzinfo=UTC),
+                user_acked=False,
+            )
+        )
+
+    _mock_get_updates([_message_update("/alerts")])
+    reply = _mock_send_message()
+    bot = _make_bot()
+    bot.poll_once()
+
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "Recent alerts" in text
+    assert "AAPL" in text
+    assert "MSFT" in text
+    assert "iv\\_spike" in text
+    # Newest first → MSFT line precedes AAPL line.
+    assert text.index("MSFT") < text.index("AAPL")
+
+
+@respx.mock
+def test_alerts_command_respects_limit(db: None) -> None:
+    with get_session() as session:
+        for i in range(5):
+            session.add(
+                Alert(
+                    alert_type="setup_triggered",
+                    symbol=f"SYM{i}",
+                    payload_json={"i": i},
+                    triggered_at=datetime(2026, 5, 2, 10, i, tzinfo=UTC),
+                )
+            )
+
+    _mock_get_updates([_message_update("/alerts 2")])
+    reply = _mock_send_message()
+    bot = _make_bot()
+    bot.poll_once()
+
+    text = json.loads(reply.calls.last.request.content)["text"]
+    # Newest two: SYM4 + SYM3.
+    assert "SYM4" in text
+    assert "SYM3" in text
+    assert "SYM0" not in text
+
+
+@respx.mock
+def test_alerts_command_empty(db: None) -> None:
+    _mock_get_updates([_message_update("/alerts")])
+    reply = _mock_send_message()
+    bot = _make_bot()
+    bot.poll_once()
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "No alerts" in text
+
+
+# ----------------------------------------------------------------------
+# /jobs command
+# ----------------------------------------------------------------------
+@respx.mock
+def test_jobs_command_lists_latest_per_job(db: None) -> None:
+    base = datetime(2026, 5, 2, 1, 0, tzinfo=UTC)
+    with get_session() as session:
+        # Two runs of evening_pipeline; only the newer should appear.
+        session.add(
+            JobRun(
+                job_name="evening_pipeline",
+                started_at=base - timedelta(days=1),
+                ended_at=base - timedelta(days=1) + timedelta(seconds=5),
+                status="failure",
+            )
+        )
+        session.add(
+            JobRun(
+                job_name="evening_pipeline",
+                started_at=base,
+                ended_at=base + timedelta(seconds=10),
+                status="success",
+            )
+        )
+        session.add(
+            JobRun(
+                job_name="morning_digest",
+                started_at=base + timedelta(hours=4),
+                ended_at=base + timedelta(hours=4, seconds=2),
+                status="success",
+            )
+        )
+
+    _mock_get_updates([_message_update("/jobs")])
+    reply = _mock_send_message()
+    bot = _make_bot()
+    bot.poll_once()
+
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "Jobs" in text
+    assert "evening\\_pipeline" in text
+    assert "morning\\_digest" in text
+    # Only the newer evening_pipeline run is shown → its status is "success", not "failure".
+    assert "failure" not in text
+
+
+@respx.mock
+def test_jobs_command_empty(db: None) -> None:
+    _mock_get_updates([_message_update("/jobs")])
+    reply = _mock_send_message()
+    bot = _make_bot()
+    bot.poll_once()
+    text = json.loads(reply.calls.last.request.content)["text"]
+    assert "No job runs" in text
+
+
+# ----------------------------------------------------------------------
+# /help text mentions the new commands
+# ----------------------------------------------------------------------
+@respx.mock
+def test_help_text_lists_new_commands(db: None) -> None:
+    _mock_get_updates([_message_update("/help")])
+    reply = _mock_send_message()
+    bot = _make_bot()
+    bot.poll_once()
+
+    text = json.loads(reply.calls.last.request.content)["text"]
+    for cmd in ("/macro", "/earnings", "/positions", "/ticker", "/alerts", "/jobs"):
+        # MarkdownV2 escapes "/" as "/" (no escape) but the body itself should
+        # still contain the literal command tokens.
+        assert cmd in text
