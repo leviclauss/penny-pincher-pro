@@ -133,6 +133,7 @@ const STRATEGY_LEG_TYPES = [
   "cc_close",
   "cc_assigned",
   "cc_expired",
+  "share_sold",
 ] as const;
 
 function TradeDetail({

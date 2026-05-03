@@ -25,8 +25,11 @@ Persistence:
 - One ``backtest_trades`` row per *closed* leg, with ``leg_type`` set to
   one of ``csp_open``/``csp_close``/``csp_assigned``/``csp_expired`` for
   puts and ``cc_open``/``cc_close``/``cc_assigned``/``cc_expired`` for
-  calls. Open legs at the end of the run are also flushed (with no
-  ``exit_date``) so the UI can show what's still in flight.
+  calls. Covered-call assignments also emit a ``share_sold`` row that
+  captures the per-lot share exit (``strike`` proceeds vs. share cost
+  basis) — this keeps option premium P/L and underlying-stock P/L on
+  separate rows. Open legs at the end of the run are also flushed
+  (with no ``exit_date``) so the UI can show what's still in flight.
 - One ``backtest_equity`` row per trading day.
 """
 
@@ -93,6 +96,7 @@ LEG_CC_OPEN = "cc_open"
 LEG_CC_CLOSE = "cc_close"
 LEG_CC_ASSIGNED = "cc_assigned"
 LEG_CC_EXPIRED = "cc_expired"
+LEG_SHARE_SOLD = "share_sold"
 
 
 @dataclass(frozen=True, slots=True)
@@ -394,21 +398,23 @@ def _settle_short_put(state: _SimState, opt: OptionPosition, day: date, underlyi
         )
         return
 
-    # ITM at expiry → assigned. Pay strike * 100, receive shares. Cost basis
-    # is the strike less the credit per share already in cash from the open.
+    # ITM at expiry → assigned. Pay strike * 100, receive shares at the
+    # actual strike paid; the put premium stays in cash where it was
+    # credited at open and is reported as this leg's realized P/L. Any
+    # spot-vs-strike loss surfaces as unrealized on the share lot until
+    # the shares are eventually sold (CC assignment or close).
     cost = opt.strike * opt.shares_covered
     state.portfolio.debit(cost)
-    cost_basis = opt.strike - opt.entry_premium
     state.portfolio.add_shares(
         ShareLot(
             cycle_id=opt.cycle_id,
             symbol=opt.symbol,
             shares=opt.shares_covered,
-            cost_basis=cost_basis,
+            cost_basis=opt.strike,
             acquired_date=day,
         )
     )
-    realized = (opt.entry_premium - intrinsic) * opt.shares_covered - opt.fees_open
+    realized = opt.entry_premium * opt.shares_covered - opt.fees_open
     state.portfolio.realized_pnl += realized
     state.pending.append(
         _PendingTrade(
@@ -420,7 +426,7 @@ def _settle_short_put(state: _SimState, opt: OptionPosition, day: date, underlyi
             strike=opt.strike,
             expiration=opt.expiration,
             entry_price=opt.entry_premium,
-            exit_price=intrinsic,
+            exit_price=0.0,
             outcome="assigned",
             realized_pnl=realized,
             fees=opt.fees_open,
@@ -452,20 +458,28 @@ def _settle_short_call(state: _SimState, opt: OptionPosition, day: date, underly
         )
         return
 
-    # ITM call → shares are called away at strike.
+    # ITM call → shares are called away at strike. Two ledger events:
+    # (1) the call leg ends with no exit debit (shares were delivered, not
+    #     bought back), so its realized P/L is the original premium credit
+    #     net of fees;
+    # (2) the share lot exits at ``strike`` against its cost basis — that
+    #     is the only term that legitimately swings with the underlying,
+    #     and it is recorded on its own ``share_sold`` row.
     lots_to_sell = _take_lots(state.portfolio.shares, opt.symbol, opt.shares_covered)
     proceeds = opt.strike * opt.shares_covered
     state.portfolio.credit(proceeds)
-    share_realized = sum((opt.strike - lot.cost_basis) * lot.shares for lot in lots_to_sell)
+    shares_sold = sum(lot.shares for lot in lots_to_sell)
+    weighted_basis = (
+        sum(lot.shares * lot.cost_basis for lot in lots_to_sell) / shares_sold
+        if shares_sold
+        else 0.0
+    )
+    earliest_acquired = min((lot.acquired_date for lot in lots_to_sell), default=opt.entry_date)
+    share_realized = (opt.strike - weighted_basis) * shares_sold
     for lot in lots_to_sell:
         state.portfolio.remove_shares(lot)
-    realized = (
-        opt.entry_premium * opt.shares_covered
-        - intrinsic * opt.shares_covered
-        + share_realized
-        - opt.fees_open
-    )
-    state.portfolio.realized_pnl += realized
+    option_realized = opt.entry_premium * opt.shares_covered - opt.fees_open
+    state.portfolio.realized_pnl += option_realized + share_realized
     state.cycles_completed += 1
     state.pending.append(
         _PendingTrade(
@@ -477,10 +491,26 @@ def _settle_short_call(state: _SimState, opt: OptionPosition, day: date, underly
             strike=opt.strike,
             expiration=opt.expiration,
             entry_price=opt.entry_premium,
-            exit_price=intrinsic,
+            exit_price=0.0,
             outcome="assigned",
-            realized_pnl=realized,
+            realized_pnl=option_realized,
             fees=opt.fees_open,
+        )
+    )
+    state.pending.append(
+        _PendingTrade(
+            cycle_id=opt.cycle_id,
+            symbol=opt.symbol,
+            leg_type=LEG_SHARE_SOLD,
+            entry_date=earliest_acquired,
+            exit_date=day,
+            strike=opt.strike,
+            expiration=None,
+            entry_price=weighted_basis,
+            exit_price=opt.strike,
+            outcome="shares_called_away",
+            realized_pnl=share_realized,
+            fees=0.0,
         )
     )
 
