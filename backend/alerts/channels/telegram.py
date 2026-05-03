@@ -65,7 +65,13 @@ class TelegramChannel:
     def configured(self) -> bool:
         return bool(self._token and self._chat_id)
 
-    def send(self, alert_type: str, payload: dict[str, Any]) -> ChannelResult:
+    def send(
+        self,
+        alert_type: str,
+        payload: dict[str, Any],
+        *,
+        alert_id: int | None = None,
+    ) -> ChannelResult:
         if not self.configured:
             log.warning("telegram.skip.unconfigured", alert_type=alert_type)
             return ChannelResult(False, None, "telegram_not_configured")
@@ -84,8 +90,15 @@ class TelegramChannel:
         chunks = split_for_telegram(text)
         first_message_id: str | None = None
         for index, chunk in enumerate(chunks):
+            # Only attach the inline ack keyboard to the *last* chunk so the
+            # button stays visible at the bottom of a multi-message digest.
+            reply_markup = (
+                _build_ack_keyboard(alert_id)
+                if alert_id is not None and index == len(chunks) - 1
+                else None
+            )
             try:
-                message_id = self._send_one(chunk, alert_type=alert_type)
+                message_id = self._send_one(chunk, alert_type=alert_type, reply_markup=reply_markup)
             except Exception as exc:
                 log.error(
                     "telegram.send.failed",
@@ -102,6 +115,7 @@ class TelegramChannel:
             alert_type=alert_type,
             chunks=len(chunks),
             message_id=first_message_id,
+            alert_id=alert_id,
         )
         return ChannelResult(True, first_message_id, None)
 
@@ -111,7 +125,13 @@ class TelegramChannel:
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
-    def _send_one(self, text: str, *, alert_type: str) -> str:
+    def _send_one(
+        self,
+        text: str,
+        *,
+        alert_type: str,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> str:
         url = f"{API_BASE}/bot{self._token}/sendMessage"
         body: dict[str, Any] = {
             "chat_id": self._chat_id,
@@ -119,6 +139,8 @@ class TelegramChannel:
             "parse_mode": self._parse_mode,
             "disable_web_page_preview": self._disable_preview,
         }
+        if reply_markup is not None:
+            body["reply_markup"] = reply_markup
         response = self._client.post(url, json=body)
         if response.status_code == 429:
             retry_after = _retry_after_seconds(response)
@@ -150,6 +172,15 @@ class TelegramChannel:
         response = self._client.post(url, json=body)
         response.raise_for_status()
         return _extract_message_id(response)
+
+
+def _build_ack_keyboard(alert_id: int) -> dict[str, Any]:
+    """Inline keyboard with a single Ack button keyed by alert_id."""
+    return {
+        "inline_keyboard": [
+            [{"text": "✓ Ack", "callback_data": f"ack:{alert_id}"}],
+        ],
+    }
 
 
 def _retry_after_seconds(response: httpx.Response) -> int:

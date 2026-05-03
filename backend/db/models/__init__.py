@@ -12,7 +12,7 @@ from db.models.market import (
 )
 from db.models.positions import Position, PositionLeg, PositionSnapshot
 from db.models.screener import FilterConfig, ScreenerResult
-from db.models.system import JobRun
+from db.models.system import BotState, JobRun
 
 __all__ = [
     "Alert",
@@ -21,6 +21,7 @@ __all__ = [
     "BacktestRun",
     "BacktestTrade",
     "BarDaily",
+    "BotState",
     "Earnings",
     "FilterConfig",
     "IndicatorDaily",

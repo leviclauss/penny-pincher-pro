@@ -70,6 +70,16 @@ class Settings(BaseSettings):
     telegram_disable_preview: bool = True
     telegram_timeout_s: float = 10.0
 
+    # Inbound bot (long-poll). Off by default — flip on per deployment once
+    # the outbound side is configured. Long-poll timeout is the Bot API
+    # ``getUpdates`` timeout; the HTTP read timeout is timeout + a small
+    # buffer so the request can return cleanly when no updates are pending.
+    telegram_inbound_enabled: bool = False
+    telegram_inbound_long_poll_s: int = 25
+    telegram_inbound_heartbeat_s: int = 300
+    telegram_inbound_idle_sleep_s: float = 1.0
+    telegram_inbound_max_failures: int = 5
+
     # --- Email (SMTP) channel ---
     smtp_host: str = Field(default="")
     smtp_port: int = 587
