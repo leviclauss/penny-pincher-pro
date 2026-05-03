@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, cast
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -131,7 +131,7 @@ def list_registered_jobs(request: Request) -> list[JobInfoOut]:
             cron=s.info.cron,
             timezone=s.info.timezone,
             enabled=s.enabled,
-            next_run_at=s.next_run_at,
+            next_run_at=s.next_run_at.astimezone(timezone.utc) if s.next_run_at else None,
             last_run=latest_by_name.get(s.info.name),
         )
         for s in statuses
