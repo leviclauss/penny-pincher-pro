@@ -53,7 +53,8 @@ export function OpenShortPutDialog({ open, onOpenChange }: Props): JSX.Element {
       setNotes("");
       mutation.reset();
     }
-  }, [open, mutation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const submit = (e: React.FormEvent): void => {
     e.preventDefault();

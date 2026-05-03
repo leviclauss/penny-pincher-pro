@@ -186,7 +186,8 @@ export function TransitionDialog({ position, kind, onClose }: Props): JSX.Elemen
       setCredit("");
       mutation.reset();
     }
-  }, [kind, mutation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
 
   if (!meta || !kind) {
     return (
