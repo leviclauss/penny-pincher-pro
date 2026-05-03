@@ -5,6 +5,7 @@ import type {
   CloseDebitInput,
   CloseSharesInput,
   ExpireInput,
+  FilterCatalogEntry,
   HealthStatus,
   IVPoint,
   JobInfoOut,
@@ -159,6 +160,10 @@ export function fetchScreenerConfigs(activeOnly = false): Promise<ScreenerConfig
 
 export function fetchScreenerConfig(configId: number): Promise<ScreenerConfigDetail> {
   return getJson<ScreenerConfigDetail>(`/api/screener/configs/${configId}`);
+}
+
+export function fetchFilterCatalog(): Promise<FilterCatalogEntry[]> {
+  return getJson<FilterCatalogEntry[]>("/api/screener/filters");
 }
 
 export function createScreenerConfig(
