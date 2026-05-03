@@ -57,7 +57,9 @@ class NtfyChannel(Channel):
     def configured(self) -> bool:
         return bool(self._server_url and self._topic)
 
-    def send(self, alert_type: str, payload: dict[str, Any], *, alert_id: int | None = None) -> ChannelResult:
+    def send(
+        self, alert_type: str, payload: dict[str, Any], *, alert_id: int | None = None
+    ) -> ChannelResult:
         if not self.configured:
             log.warning("ntfy.skip.unconfigured", alert_type=alert_type)
             return ChannelResult(False, None, "ntfy_not_configured")

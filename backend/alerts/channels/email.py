@@ -49,7 +49,9 @@ class EmailChannel(Channel):
     def configured(self) -> bool:
         return bool(self._host and self._from_address and self._to_address)
 
-    def send(self, alert_type: str, payload: dict[str, Any], *, alert_id: int | None = None) -> ChannelResult:
+    def send(
+        self, alert_type: str, payload: dict[str, Any], *, alert_id: int | None = None
+    ) -> ChannelResult:
         if not self.configured:
             log.warning("email.skip.unconfigured", alert_type=alert_type)
             return ChannelResult(False, None, "email_not_configured")
