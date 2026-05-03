@@ -21,6 +21,9 @@ dist/
 htmlcov/
 coverage.xml
 
+# Claude
+.claude/worktrees
+
 # Node / Frontend
 node_modules/
 frontend/dist/
