@@ -133,6 +133,7 @@ def test_job_writes_snapshot_jobrun_and_dispatches_alert(
         assert result["positions"] == 1
         assert result["triggers"] >= 1
         assert result["alerts_fired"] >= 1
+        assert result["alerts_suppressed"] == 0
 
     rules = {payload["rule"] for _, payload in fired}
     assert "pct_max_profit" in rules

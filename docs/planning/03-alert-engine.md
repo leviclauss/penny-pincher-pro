@@ -14,10 +14,14 @@ Phased delivery so each PR is independently useful:
   short-circuits on NYSE holidays, when the latest bar is too stale (default
   4-day tolerance to cover long weekends), and when an alert for the same
   ``as_of`` date was already dispatched (dedup via ``payload_json.as_of``).
-- **Phase 2 — Position-management triggers (shipped as part of doc 04).**
-  The ``position_management`` scheduler job already evaluates the rules and
-  dispatches one alert per trigger. A future iteration will pull dedup into
-  the same shared helper used by digests.
+- **Phase 2 — Position-management dedup (shipped).**
+  The ``position_management`` scheduler job evaluates the rules and
+  dispatches one alert per trigger. ``fire_triggers`` now consults
+  ``alerts.triggers._dedup.already_dispatched_for_position_rule`` before
+  dispatching, enforcing the "max 1 per condition per position lifecycle"
+  rule below. Re-runs (manual + scheduled on the same day, or daily
+  evaluations of a stuck condition) are fully suppressed and reported
+  via ``job_runs.result.alerts_suppressed``.
 - **Phase 3 — Setup-triggered + IV-spike (not started).** Needs a polling
   job during RTH and tighter dedup ("suppress if ticker already in this
   morning's digest").
