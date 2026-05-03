@@ -1,4 +1,6 @@
 import type {
+  AlertListParams,
+  AlertOut,
   AssignInput,
   CalledAwayInput,
   ChartBar,
@@ -319,3 +321,25 @@ export const calledAway = (id: number, body: CalledAwayInput): Promise<PositionO
 
 export const closeShares = (id: number, body: CloseSharesInput): Promise<PositionOut> =>
   postTransition(id, "close-shares", body);
+
+export function fetchAlerts(params: AlertListParams = {}): Promise<AlertOut[]> {
+  const qs = new URLSearchParams();
+  if (params.since) qs.set("since", params.since);
+  if (params.until) qs.set("until", params.until);
+  if (params.alertType) qs.set("alert_type", params.alertType);
+  if (params.symbol) qs.set("symbol", params.symbol);
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  if (params.offset !== undefined) qs.set("offset", String(params.offset));
+  const suffix = qs.toString();
+  return getJson<AlertOut[]>(`/api/alerts${suffix ? `?${suffix}` : ""}`);
+}
+
+export function fetchAlertTypes(): Promise<string[]> {
+  return getJson<string[]>("/api/alerts/types");
+}
+
+export function ackAlert(alertId: number, acked: boolean): Promise<AlertOut> {
+  return mutateJson<AlertOut>("POST", `/api/alerts/${alertId}/ack`, { acked }).then(
+    (r) => r as AlertOut,
+  );
+}

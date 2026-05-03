@@ -300,3 +300,23 @@ export interface CloseSharesInput {
   closed_on: string;
   fees?: number;
 }
+
+export interface AlertOut {
+  id: number;
+  alert_type: string;
+  symbol: string | null;
+  config_id: number | null;
+  payload: Record<string, unknown>;
+  triggered_at: string;
+  channels_sent: string[];
+  user_acked: boolean;
+}
+
+export interface AlertListParams {
+  since?: string | null;
+  until?: string | null;
+  alertType?: string | null;
+  symbol?: string | null;
+  limit?: number;
+  offset?: number;
+}

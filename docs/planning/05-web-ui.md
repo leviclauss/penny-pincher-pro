@@ -39,10 +39,13 @@ Top-of-screen summary, refreshed on load:
 - Bulk import from CSV
 - Per-ticker page: full chart, IV history, earnings dates, recent screener hits
 
-### `/alerts` — Alert history
-- Chronological feed of alerts fired
-- Filter by type, symbol, date range
-- Mark as acted on / dismissed
+### `/alerts` — Alert history (shipped)
+- Chronological feed of alerts fired (newest first, paginated)
+- Filter by type, symbol, since/until date range
+- Click row → payload dialog (the JSON the Telegram template was
+  rendered from)
+- Per-row ack toggle (`user_acked` boolean on the `alerts` row;
+  no audit table)
 
 ### `/backtest` — Backtesting (covered in doc 06)
 

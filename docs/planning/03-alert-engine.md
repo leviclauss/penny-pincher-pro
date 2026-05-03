@@ -55,6 +55,12 @@ The dispatcher (``alerts/dispatcher.py``), Telegram channel
 (``alerts/templates/telegram_render.py``) are all in place and shared by
 every trigger family.
 
+The in-app history feed (``GET /api/alerts``, with optional ``since`` /
+``until`` / ``alert_type`` / ``symbol`` filters and a ``user_acked``
+toggle via ``POST /api/alerts/{id}/ack``) backs the ``/alerts`` page
+in the web UI; every dispatched row shows up there regardless of which
+channels actually delivered.
+
 ## Alert types
 
 ### Daily digest alerts (push at scheduled time)

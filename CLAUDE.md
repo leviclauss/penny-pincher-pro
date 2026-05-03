@@ -231,6 +231,10 @@ file per resource under `backend/api/`:
 | `GET /api/macro/current` | `api/macro.py` | most recent macro_daily row, or null |
 | `GET /api/macro/history?range=6m` | `api/macro.py` | VIX/SPY series |
 | `GET /api/earnings/upcoming?days=7` | `api/earnings.py` | active-watchlist earnings within window |
+| `GET /api/alerts` | `api/alerts.py` | history feed; filters: `since`, `until`, `alert_type`, `symbol`, `limit`, `offset` |
+| `GET /api/alerts/types` | `api/alerts.py` | distinct alert types observed in history |
+| `POST /api/alerts/{id}/ack` | `api/alerts.py` | toggle `user_acked` (body `{"acked": bool}`) |
+| `POST /api/alerts/test` | `api/alerts.py` | local-curl helper that fires a fixture payload through the dispatcher |
 
 Range tokens accepted by chart/IV/macro endpoints: `1m`, `3m`, `6m`,
 `1y`, `2y`, `5y`, `max` (subset varies by endpoint).
@@ -246,6 +250,8 @@ Routes shipped (read-only, mobile-responsive shell with sidebar nav):
 - `/tickers/{symbol}` — Header (last close + day change), 1y price
   chart with toggleable EMA 20/50/200 overlays and earnings reference
   lines, RSI(14) sub-panel, IV ATM history.
+- `/alerts` — Chronological alert feed with type/symbol/date filters,
+  payload-inspection dialog, per-row ack toggle.
 
 Stack additions:
 - `react-router-dom` v6 for routing.
@@ -256,9 +262,9 @@ Stack additions:
 - Every fetch goes through TanStack Query; helpers in
   `src/api/client.ts`, response shapes in `src/api/types.ts`.
 
-Out of scope until later sessions: `/screener`, `/configs`,
-`/positions`, `/alerts`, `/backtest`, `/settings`, auth, and any
-mutations.
+Out of scope until later sessions: `/configs`, `/backtest`,
+`/settings`, auth, and any read-only-→-write mutations not already
+listed above.
 
 ## How to add a screener filter (partner track)
 
