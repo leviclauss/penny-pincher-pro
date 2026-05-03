@@ -22,9 +22,9 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from core.config import get_settings
-from core.time import utcnow
+from core.time import market_today, utcnow
 from db import get_session
-from db.models.market import BarDaily
+from db.models.market import BarDaily, Ticker
 from db.models.system import JobRun
 from scheduler.app import get_job_body, list_jobs
 
@@ -38,6 +38,23 @@ class HealthStatus(BaseModel):
     database_url_scheme: str
     last_bar_date: date | None
     bar_count: int
+
+
+class TickerFreshness(BaseModel):
+    symbol: str
+    last_bar_date: date | None
+    days_stale: int | None
+    is_stale: bool
+
+
+class DataFreshnessResponse(BaseModel):
+    checked_at: str
+    reference_date: date
+    total_tickers: int
+    stale_tickers: int
+    fresh_tickers: int
+    no_data_tickers: int
+    tickers: list[TickerFreshness]
 
 
 class JobRunOut(BaseModel):
@@ -93,6 +110,69 @@ def health() -> HealthStatus:
 def channels_status() -> ChannelsStatus:
     settings = get_settings()
     return ChannelsStatus(telegram=bool(settings.telegram_bot_token))
+
+
+@router.get("/data-freshness", response_model=DataFreshnessResponse)
+def data_freshness(
+    max_age_days: int = Query(default=3, ge=1, le=30),
+) -> DataFreshnessResponse:
+    """Per-ticker freshness status: staleness relative to today."""
+    today = market_today()
+    with get_session() as session:
+        active_tickers = (
+            session.execute(
+                select(Ticker.symbol).where(Ticker.is_active.is_(True)).order_by(Ticker.symbol)
+            )
+            .scalars()
+            .all()
+        )
+
+        # Latest bar date per symbol.
+        latest_bars = dict(
+            session.execute(
+                select(BarDaily.symbol, func.max(BarDaily.date))
+                .where(BarDaily.symbol.in_(active_tickers))
+                .group_by(BarDaily.symbol)
+            ).all()
+        )
+
+    tickers: list[TickerFreshness] = []
+    stale_count = 0
+    fresh_count = 0
+    no_data_count = 0
+
+    for symbol in active_tickers:
+        last_bar_date = latest_bars.get(symbol)
+        if last_bar_date is None:
+            tickers.append(
+                TickerFreshness(symbol=symbol, last_bar_date=None, days_stale=None, is_stale=False)
+            )
+            no_data_count += 1
+        else:
+            days_stale = (today - last_bar_date).days
+            is_stale = days_stale > max_age_days
+            tickers.append(
+                TickerFreshness(
+                    symbol=symbol,
+                    last_bar_date=last_bar_date,
+                    days_stale=days_stale,
+                    is_stale=is_stale,
+                )
+            )
+            if is_stale:
+                stale_count += 1
+            else:
+                fresh_count += 1
+
+    return DataFreshnessResponse(
+        checked_at=utcnow().isoformat(),
+        reference_date=today,
+        total_tickers=len(active_tickers),
+        stale_tickers=stale_count,
+        fresh_tickers=fresh_count,
+        no_data_tickers=no_data_count,
+        tickers=tickers,
+    )
 
 
 @router.get("/job-runs", response_model=list[JobRunOut])

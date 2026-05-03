@@ -1,0 +1,16 @@
+*⚠️ Data Freshness Warning* — {{ as_of | esc }}
+
+{% if stale_symbols %}
+*Stale tickers* \({{ stale_count | esc }}\)
+{% for s in stale_symbols %}
+• *{{ s.symbol | esc }}* — last bar {{ s.last_bar_date | esc }} \({{ s.days_stale | esc }}d ago\)
+{% endfor %}
+{% endif %}
+{% if skipped_symbols %}
+*Skipped during ingestion* \({{ skipped_count | esc }}\)
+{% for sym in skipped_symbols %}
+• {{ sym | esc }}
+{% endfor %}
+{% endif %}
+
+{{ total_active | esc }} active tickers checked\.
