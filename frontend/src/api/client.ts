@@ -2,8 +2,11 @@ import type {
   AlertListParams,
   AlertOut,
   AlertPreference,
-  AlertPreferenceUpdate,    
+  AlertPreferenceUpdate,
   AssignInput,
+  BacktestRunIn,
+  BacktestRunOut,
+  BacktestTradeOut,
   CalledAwayInput,
   ChannelsStatus,
   ChartBar,
@@ -363,5 +366,25 @@ export function fetchAlertTypes(): Promise<string[]> {
 export function ackAlert(alertId: number, acked: boolean): Promise<AlertOut> {
   return mutateJson<AlertOut>("POST", `/api/alerts/${alertId}/ack`, { acked }).then(
     (r) => r as AlertOut,
+  );
+}
+
+export function fetchBacktestRuns(): Promise<BacktestRunOut[]> {
+  return getJson<BacktestRunOut[]>("/api/backtest/runs");
+}
+
+export function fetchBacktestTrades(runId: number): Promise<BacktestTradeOut[]> {
+  return getJson<BacktestTradeOut[]>(`/api/backtest/runs/${runId}/trades`);
+}
+
+export function runBacktest(input: BacktestRunIn): Promise<BacktestRunOut> {
+  return mutateJson<BacktestRunOut>("POST", "/api/backtest/runs", input).then(
+    (r) => r as BacktestRunOut,
+  );
+}
+
+export function deleteBacktestRun(runId: number): Promise<void> {
+  return mutateJson<void>("DELETE", `/api/backtest/runs/${runId}`).then(
+    () => undefined,
   );
 }

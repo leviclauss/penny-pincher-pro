@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { Alerts } from "@/pages/Alerts";
+import { Backtest } from "@/pages/Backtest";
 import { Dashboard } from "@/pages/Dashboard";
 import { Jobs } from "@/pages/Jobs";
 import { NotFound } from "@/pages/NotFound";
@@ -28,6 +29,7 @@ export function App(): JSX.Element {
           <Route path="positions" element={<Positions />} />
           <Route path="positions/:id" element={<PositionDetail />} />
           <Route path="alerts" element={<Alerts />} />
+          <Route path="backtest" element={<Backtest />} />
           <Route path="jobs" element={<Jobs />} />
           <Route path="settings" element={<Settings />} />
           <Route path="404" element={<NotFound />} />

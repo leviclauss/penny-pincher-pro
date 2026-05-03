@@ -339,3 +339,36 @@ export interface AlertListParams {
   limit?: number;
   offset?: number;
 }
+
+export interface BacktestRunOut {
+  id: number;
+  config_id: number | null;
+  config_name: string | null;
+  start_date: string;
+  end_date: string;
+  params_json: Record<string, unknown> | null;
+  created_at: string;
+  trade_count: number;
+  win_rate: number | null;
+  mean_return_pct: number | null;
+  median_return_pct: number | null;
+}
+
+export interface BacktestTradeOut {
+  id: number;
+  symbol: string;
+  entry_date: string;
+  exit_date: string | null;
+  entry_price: number;
+  exit_price: number | null;
+  outcome: string | null;
+  realized_pnl_pct: number | null;
+}
+
+export interface BacktestRunIn {
+  config_id: number;
+  start_date: string;
+  end_date: string;
+  forward_days?: number;
+  symbols?: string[] | null;
+}
