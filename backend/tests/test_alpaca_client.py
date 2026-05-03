@@ -31,11 +31,18 @@ class _FakeBarSet:
 
 
 class _FakeClient:
-    def __init__(self, response: object, *, raise_first_n: int = 0) -> None:
+    def __init__(
+        self,
+        response: object,
+        *,
+        raise_first_n: int = 0,
+        quote_response: object | None = None,
+    ) -> None:
         self._response = response
         self._raise_first_n = raise_first_n
         self.calls = 0
         self.last_request: Any = None
+        self._quote_response = quote_response
 
     def get_stock_bars(self, request: Any) -> object:
         self.last_request = request
@@ -43,6 +50,10 @@ class _FakeClient:
         if self.calls <= self._raise_first_n:
             raise ConnectionError("transient")
         return self._response
+
+    def get_stock_latest_quote(self, request_params: Any) -> object:
+        self.last_request = request_params
+        return self._quote_response or {}
 
 
 def _bars_response() -> _FakeBarSet:

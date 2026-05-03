@@ -1,4 +1,11 @@
 # serializer version: 1
+# name: test_render_iv_spike_snapshot
+  '''
+  *IV Spike* — *AAPL* \(2026\-05\-04\)
+  
+  ATM IV 28\.0% → 36\.0% \(*\+28\.6%*\) \| close 172\.40
+  '''
+# ---
 # name: test_render_morning_digest_snapshot
   '''
   *Morning Digest* — 2026\-05\-02
@@ -10,5 +17,12 @@
   
   *Earnings today*
   • MSFT \(AMC\)
+  '''
+# ---
+# name: test_render_setup_triggered_snapshot
+  '''
+  *Setup Triggered* — *AAPL* \(2026\-05\-04\)
+  
+  Conservative Wheel \| close 172\.40 \| RSI 32 \| IVp 67 \| score 0\.81
   '''
 # ---

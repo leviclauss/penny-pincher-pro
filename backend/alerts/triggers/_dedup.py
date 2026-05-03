@@ -61,3 +61,50 @@ def already_dispatched_for_position_rule(
         Alert.payload_json["rule"].as_string() == rule,
     )
     return session.execute(stmt.limit(1)).scalar_one_or_none() is not None
+
+
+def already_dispatched_for_symbol_on(
+    session: Session,
+    alert_type: str,
+    *,
+    as_of: date,
+    symbol: str,
+) -> bool:
+    """True if an alert of this type already fired for ``symbol`` on ``as_of``.
+
+    Used by intraday triggers (``setup_triggered``, ``iv_spike``) to enforce
+    "max 1 per ticker per day" — a re-fire from a later poll within the same
+    trading day is suppressed regardless of which config triggered it.
+    """
+    stmt = select(Alert.id).where(
+        Alert.alert_type == alert_type,
+        Alert.symbol == symbol,
+        Alert.payload_json["as_of"].as_string() == as_of.isoformat(),
+    )
+    return session.execute(stmt.limit(1)).scalar_one_or_none() is not None
+
+
+def symbol_in_morning_digest(
+    session: Session,
+    *,
+    as_of: date,
+    symbol: str,
+) -> bool:
+    """True if ``symbol`` appears in today's morning_digest ``screener_hits``.
+
+    Backs the "intraday setup_triggered is suppressed if ticker already in
+    morning summary" rule from doc 03. Returns False if no morning digest
+    has fired yet today.
+    """
+    digest = session.execute(
+        select(Alert.payload_json).where(
+            Alert.alert_type == "morning_digest",
+            Alert.payload_json["as_of"].as_string() == as_of.isoformat(),
+        )
+    ).scalar_one_or_none()
+    if digest is None:
+        return False
+    hits = digest.get("screener_hits") if isinstance(digest, dict) else None
+    if not isinstance(hits, list):
+        return False
+    return any(isinstance(h, dict) and h.get("symbol") == symbol for h in hits)

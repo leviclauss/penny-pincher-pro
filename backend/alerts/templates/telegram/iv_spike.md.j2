@@ -1,0 +1,3 @@
+*IV Spike* — *{{ symbol | esc }}* \({{ as_of | esc }}\)
+
+ATM IV {{ "%.1f" | format(baseline_iv * 100) | esc }}% → {{ "%.1f" | format(current_iv * 100) | esc }}% \(*{{ "%+.1f" | format(pct_change * 100) | esc }}%*\) \| close {{ "%.2f" | format(close) | esc }}

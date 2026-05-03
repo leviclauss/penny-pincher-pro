@@ -19,9 +19,10 @@ from alerts.templates.telegram_render import (
     split_for_telegram,
 )
 
-FIXTURE = (
-    Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "alerts" / "morning_digest.json"
-)
+FIXTURES_DIR = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "alerts"
+FIXTURE = FIXTURES_DIR / "morning_digest.json"
+SETUP_FIXTURE = FIXTURES_DIR / "setup_triggered.json"
+IV_SPIKE_FIXTURE = FIXTURES_DIR / "iv_spike.json"
 
 
 def test_escape_markdown_v2_handles_all_specials() -> None:
@@ -79,3 +80,15 @@ def test_split_hard_splits_oversized_paragraph() -> None:
     chunks = split_for_telegram(text, limit=100)
     assert all(len(c) <= 100 for c in chunks)
     assert "".join(chunks) == text
+
+
+def test_render_setup_triggered_snapshot(snapshot: SnapshotAssertion) -> None:
+    payload = json.loads(SETUP_FIXTURE.read_text())
+    output = render("setup_triggered", payload, parse_mode="MarkdownV2")
+    assert output == snapshot
+
+
+def test_render_iv_spike_snapshot(snapshot: SnapshotAssertion) -> None:
+    payload = json.loads(IV_SPIKE_FIXTURE.read_text())
+    output = render("iv_spike", payload, parse_mode="MarkdownV2")
+    assert output == snapshot

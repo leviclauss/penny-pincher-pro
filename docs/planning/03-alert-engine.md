@@ -22,9 +22,33 @@ Phased delivery so each PR is independently useful:
   rule below. Re-runs (manual + scheduled on the same day, or daily
   evaluations of a stuck condition) are fully suppressed and reported
   via ``job_runs.result.alerts_suppressed``.
-- **Phase 3 — Setup-triggered + IV-spike (not started).** Needs a polling
-  job during RTH and tighter dedup ("suppress if ticker already in this
-  morning's digest").
+- **Phase 3 — Setup-triggered + IV-spike (shipped).** A new
+  [`intraday_pulse`](../../backend/scheduler/jobs/intraday.py) job runs
+  every ``SCHEDULER_INTRADAY_INTERVAL_MINUTES`` minutes (default 15)
+  during RTH, NYSE-holiday-skipped, gated by quote freshness
+  (``INTRADAY_QUOTE_MAX_AGE_S``, default 90 s). Disabled by default — opt
+  in per deployment via ``SCHEDULER_INTRADAY_ENABLED=true``.
+  - **Setup pass**: synthesizes an intraday ``FilterContext`` per symbol
+    (today's bar overridden with the live mid; RSI(14) recomputed; EMAs
+    and IV-derived indicators kept frozen because they barely move
+    intraday), runs every active screener config, fires
+    ``setup_triggered`` for the best-scoring hit per symbol. Suppressed
+    if the symbol is in this morning's digest's ``screener_hits`` (via
+    ``alerts.triggers._dedup.symbol_in_morning_digest``) or if a
+    ``setup_triggered`` already fired for the symbol today.
+  - **IV-spike pass** (off by default — pulls option chains and burns
+    Alpaca quota; enable with ``INTRADAY_IV_SPIKE_ENABLED=true``):
+    compares current ATM IV (computed via
+    ``ingestion.iv.compute_atm_iv``) to the most recent stored
+    ``indicators_daily.iv_atm``. Fires ``iv_spike`` when the percent
+    change crosses ``INTRADAY_IV_SPIKE_PCT`` (default 0.20). Per-symbol
+    chain pulls throttled to
+    ``INTRADAY_IV_SPIKE_INTERVAL_MINUTES`` (default 30) so back-to-back
+    pulse ticks don't re-pull. Same per-(symbol, day) dedup as setup.
+
+  Both trigger families dedup via the shared
+  ``already_dispatched_for_symbol_on(session, alert_type, as_of, symbol)``
+  helper — payloads always carry ``as_of`` (ISO date) and ``symbol``.
 
 The dispatcher (``alerts/dispatcher.py``), Telegram channel
 (``alerts/channels/telegram.py``), and template renderer
