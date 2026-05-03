@@ -255,6 +255,119 @@ def test_backup_offsite_disabled_when_provider_blank(
     assert (row.result_json or {})["offsite"] == "disabled"
 
 
+class _FakeS3Client:
+    """boto3 stand-in that records the upload args we care about asserting on."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.uploads: list[tuple[str, str, str]] = []
+
+    def upload_file(self, source: str, bucket: str, key: str) -> None:
+        self.uploads.append((source, bucket, key))
+        if self.fail:
+            raise RuntimeError("simulated upload failure")
+
+
+def _patch_boto3(monkeypatch: pytest.MonkeyPatch, fake: _FakeS3Client) -> dict[str, Any]:
+    """Install a fake boto3 module so ``upload_offsite`` can be exercised
+    without the real dep installed in CI.
+    """
+    captured: dict[str, Any] = {}
+
+    def fake_client(name: str, **kwargs: Any) -> _FakeS3Client:
+        captured["service"] = name
+        captured["kwargs"] = kwargs
+        return fake
+
+    fake_module = type("FakeBoto3", (), {"client": staticmethod(fake_client)})()
+    monkeypatch.setitem(__import__("sys").modules, "boto3", fake_module)
+    return captured
+
+
+def test_upload_offsite_uploads_via_boto3(
+    sqlite_db: tuple[Path, Session], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path, s = sqlite_db
+    backup_dir = tmp_path / "backups"
+    settings = Settings(
+        database_url=f"sqlite:///{db_path}",
+        backup_dir=str(backup_dir),
+        backup_offsite_enabled=True,
+        backup_offsite_provider="s3",
+        backup_offsite_bucket="my-bucket",
+        backup_offsite_prefix="wheel/",
+        backup_offsite_region="us-east-1",
+        backup_offsite_access_key_id="AKIA",
+        backup_offsite_secret_access_key="SECRET",
+    )
+    fake = _FakeS3Client()
+    captured = _patch_boto3(monkeypatch, fake)
+
+    run_backup(s, settings=settings, now=datetime(2026, 5, 3, 3, 0, 0))
+
+    assert captured["service"] == "s3"
+    assert captured["kwargs"]["region_name"] == "us-east-1"
+    assert captured["kwargs"]["aws_access_key_id"] == "AKIA"
+    assert captured["kwargs"]["aws_secret_access_key"] == "SECRET"
+    assert "endpoint_url" not in captured["kwargs"]
+    assert len(fake.uploads) == 1
+    source, bucket, key = fake.uploads[0]
+    assert bucket == "my-bucket"
+    assert key == "wheel/penny_pincher_20260503_030000.db"
+    assert source.endswith("penny_pincher_20260503_030000.db")
+
+    row = s.execute(select(JobRun).where(JobRun.job_name == JOB_NAME)).scalar_one()
+    assert row.status == STATUS_SUCCESS
+    assert (row.result_json or {})["offsite"] == "uploaded"
+
+
+def test_upload_offsite_b2_requires_endpoint(
+    sqlite_db: tuple[Path, Session], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path, s = sqlite_db
+    backup_dir = tmp_path / "backups"
+    settings = Settings(
+        database_url=f"sqlite:///{db_path}",
+        backup_dir=str(backup_dir),
+        backup_offsite_enabled=True,
+        backup_offsite_provider="b2",
+        backup_offsite_bucket="my-bucket",
+        # No endpoint URL — should be rejected before boto3 is touched.
+    )
+    _patch_boto3(monkeypatch, _FakeS3Client())
+
+    run_backup(s, settings=settings, now=datetime(2026, 5, 3, 3, 0, 0))
+
+    row = s.execute(select(JobRun).where(JobRun.job_name == JOB_NAME)).scalar_one()
+    # The job itself succeeds — off-site failure is recorded as failed.
+    assert row.status == STATUS_SUCCESS
+    result = row.result_json or {}
+    assert result["offsite"] == "failed"
+    assert "endpoint_url" in (result["offsite_error"] or "")
+
+
+def test_upload_offsite_unsupported_provider_recorded(
+    sqlite_db: tuple[Path, Session], tmp_path: Path
+) -> None:
+    db_path, s = sqlite_db
+    backup_dir = tmp_path / "backups"
+    settings = Settings(
+        database_url=f"sqlite:///{db_path}",
+        backup_dir=str(backup_dir),
+        backup_offsite_enabled=True,
+        backup_offsite_provider="gcs",
+        backup_offsite_bucket="my-bucket",
+    )
+
+    run_backup(s, settings=settings, now=datetime(2026, 5, 3, 3, 0, 0))
+
+    row = s.execute(select(JobRun).where(JobRun.job_name == JOB_NAME)).scalar_one()
+    assert row.status == STATUS_SUCCESS
+    result = row.result_json or {}
+    assert result["offsite"] == "failed"
+    assert "gcs" in (result["offsite_error"] or "")
+
+
 def test_register_backup_job_is_resolvable() -> None:
     from scheduler.app import get_job_body
 

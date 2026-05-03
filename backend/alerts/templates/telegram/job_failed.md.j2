@@ -1,0 +1,9 @@
+*Job Failed* — *{{ job_name | esc }}*
+
+{{ error | esc }}
+
+Started {{ started_at | esc }}
+{% if web_base_url %}
+
+[open]({{ web_base_url }}/jobs)
+{% endif %}

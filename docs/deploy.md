@@ -279,18 +279,64 @@ accumulates the long-tail history.
 
 ### Heartbeat monitoring (healthchecks.io)
 
-1. Sign up at https://healthchecks.io (free tier: 20 checks).
-2. Create a check called `wheel-evening-pipeline`. Set the schedule
-   to `Cron 30 17 * * 1-5` with timezone matching `TIMEZONE`. Grace 1h.
-3. Copy the ping URL.
-4. Set `HEALTHCHECKS_URL_EVENING_PIPELINE=<url>` in `.env` on the
-   server. Restart the backend: `docker compose -f docker-compose.prod.yml up -d`.
-   *(Note: this hook ships in a follow-up PR after the scheduler PR
-   merges. Until then, monitor by polling `/api/system/job-runs`
-   manually or wire your own ping into the backup cron line above.)*
+Every job that wraps with `scheduler.context.job_run` pings healthchecks.io
+on entry (`/start`), success (bare URL), and failure (`/fail`, with the
+exception text in the request body). Per-job URLs are read from
+`HEALTHCHECKS_URL_<JOB_NAME>` env vars; missing URLs short-circuit
+silently so this is safe to wire incrementally.
 
-If the evening pipeline doesn't run for >25h, healthchecks.io will
-email/push you.
+1. Sign up at https://healthchecks.io (free tier: 20 checks).
+2. Create one check per job you care about. Suggested set:
+   - `wheel-evening-pipeline` — `Cron 30 17 * * 1-5`, grace 1h
+   - `wheel-morning-digest` — `Cron 0 8 * * 1-5`, grace 30m
+   - `wheel-evening-digest` — `Cron 30 18 * * 1-5`, grace 30m
+   - `wheel-sqlite-backup` — `Cron 0 3 * * *`, grace 1h
+   Set the timezone on each to match `TIMEZONE`.
+3. Copy each ping URL into the matching env var in `.env` on the server:
+   ```
+   HEALTHCHECKS_URL_EVENING_PIPELINE=https://hc-ping.com/<uuid>
+   HEALTHCHECKS_URL_MORNING_DIGEST=https://hc-ping.com/<uuid>
+   HEALTHCHECKS_URL_EVENING_DIGEST=https://hc-ping.com/<uuid>
+   HEALTHCHECKS_URL_SQLITE_BACKUP=https://hc-ping.com/<uuid>
+   ```
+4. Restart the backend: `docker compose -f docker-compose.prod.yml up -d`.
+
+If a job stops pinging (or pings `/fail`), healthchecks.io will
+email/push you per the channel preferences on the check.
+
+Local job-failure alerts are independent of healthchecks: every failure
+also dispatches a `job_failed` Telegram alert (deduped to one per job
+per UTC day) so you'll see the breakage on your phone even if
+healthchecks.io is down.
+
+### Off-site backup to S3 / Backblaze B2 (alternative to laptop pull)
+
+If you don't want to rely on the laptop-pull strategy above, the nightly
+backup job can ship snapshots straight to S3 or B2. Install the optional
+extra into the running image (or rebuild with it baked in) and set the
+provider env vars:
+
+```bash
+docker compose -f docker-compose.prod.yml exec backend \
+  pip install -e .[backup-s3]
+```
+
+In `.env`:
+
+```
+BACKUP_OFFSITE_ENABLED=true
+BACKUP_OFFSITE_PROVIDER=b2                # or s3
+BACKUP_OFFSITE_BUCKET=wheel-snapshots
+BACKUP_OFFSITE_PREFIX=prod/
+BACKUP_OFFSITE_ENDPOINT_URL=https://s3.us-west-002.backblazeb2.com   # B2 only; AWS leaves blank
+BACKUP_OFFSITE_REGION=us-west-002
+BACKUP_OFFSITE_ACCESS_KEY_ID=<key id>
+BACKUP_OFFSITE_SECRET_ACCESS_KEY=<application key>
+```
+
+Off-site failures are recorded in the `sqlite_backup` job_runs row
+(`offsite="failed"`, with the exception in `offsite_error`) but never
+fail the job — the local snapshot is the primary recovery artefact.
 
 ## Operations
 

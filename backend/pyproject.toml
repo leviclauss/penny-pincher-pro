@@ -42,6 +42,9 @@ dev = [
     "pandas-stubs",
     "respx>=0.22",
 ]
+backup-s3 = [
+    "boto3>=1.34",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -95,7 +98,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["alembic/versions/", "build/", "dist/"]
 
 [[tool.mypy.overrides]]
-module = ["ta.*", "alpaca.*", "py_vollib.*", "py_lets_be_rational.*", "apscheduler.*", "pandas_market_calendars.*"]
+module = ["ta.*", "alpaca.*", "py_vollib.*", "py_lets_be_rational.*", "apscheduler.*", "pandas_market_calendars.*", "boto3.*", "botocore.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
