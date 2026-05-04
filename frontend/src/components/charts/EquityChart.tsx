@@ -1,7 +1,7 @@
 import {
   Area,
-  AreaChart,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
   ReferenceLine,
@@ -36,13 +36,13 @@ export function EquityChart({
   const data = points.map((p) => ({
     date: p.date,
     equity: p.equity,
-    spy: p.spy_benchmark ?? undefined,
+    spy: p.spy_benchmark,
   }));
 
   return (
     <div className="h-[260px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+        <ComposedChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#34d399" stopOpacity={0.4} />
@@ -128,7 +128,7 @@ export function EquityChart({
               connectNulls
             />
           )}
-        </AreaChart>
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
