@@ -22,6 +22,7 @@ from db.models.backtest import BacktestTrade
 from db.session import get_session
 
 from .filter_backtest import DEFAULT_CALENDAR, run_filter_backtest
+from .pricing import RealChainPricer
 from .simulator import (
     DEFAULT_DELTA_TARGET,
     DEFAULT_DTE_TARGET,
@@ -110,6 +111,16 @@ def _parse_date(_ctx: click.Context, _param: click.Parameter, value: str) -> dat
     default=DEFAULT_SLIPPAGE_PER_SHARE,
     help="(strategy mode) Per-share slippage cost on each option fill.",
 )
+@click.option(
+    "--use-real-chain",
+    is_flag=True,
+    default=False,
+    help=(
+        "(strategy mode) Use options_historical for pricing + strike selection "
+        "instead of synthetic Black-Scholes against a sigma estimate. Requires "
+        "an options-history backfill (see ingestion/options_history.py)."
+    ),
+)
 def cli(
     mode: str,
     config_id: int,
@@ -126,6 +137,7 @@ def cli(
     manage_dte: int,
     fee_per_contract: float,
     slippage_per_share: float,
+    use_real_chain: bool,
 ) -> None:
     """Replay one screener config across history."""
     settings = get_settings()
@@ -161,6 +173,7 @@ def cli(
             symbols=symbol_list,
             calendar=calendar,
             params=params,
+            use_real_chain=use_real_chain,
         )
 
 
@@ -222,8 +235,10 @@ def _run_strategy_mode(
     symbols: list[str] | None,
     calendar: str,
     params: StrategyParams,
+    use_real_chain: bool,
 ) -> None:
     with get_session() as session:
+        pricer = RealChainPricer(session) if use_real_chain else None
         summary = run_strategy_backtest(
             session,
             config_id=config_id,
@@ -232,6 +247,7 @@ def _run_strategy_mode(
             params=params,
             symbols=symbols,
             calendar_name=calendar,
+            pricer=pricer,
         )
     click.echo(
         f"run_id={summary.run_id} "

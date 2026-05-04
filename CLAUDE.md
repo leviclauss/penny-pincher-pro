@@ -112,7 +112,7 @@ other track.**
 
 | Module | Tables | Owned by |
 |---|---|---|
-| `db.models.market` | `tickers`, `bars_daily`, `indicators_daily`, `options_snapshot`, `earnings`, `macro_daily` | platform (writer), screener (reader) |
+| `db.models.market` | `tickers`, `bars_daily`, `indicators_daily`, `options_snapshot`, `options_historical`, `earnings`, `macro_daily` | platform (writer), screener (reader) |
 | `db.models.screener` | `filter_configs`, `screener_results` | screener |
 | `db.models.alerts` | `alerts`, `alert_preferences` | platform |
 | `db.models.positions` | `positions`, `position_legs`, `position_snapshots` | platform |
@@ -129,13 +129,20 @@ Schema decisions worth knowing:
   option chain exists for the symbol on the as-of date.
 - `indicators_daily.iv_rank` / `iv_percentile` need a 252-day rolling
   window; they remain NULL until ≥126 days of valid `iv_atm` history
-  accumulate (no backfill — Alpaca's options history is shallow).
+  accumulate. The 126-day warm-up can be skipped by backfilling
+  `iv_atm` from `options_historical` via `python -m ingestion.iv_backfill`.
 - `options_snapshot.volume` and `open_interest` stay NULL on the
-  free Alpaca tier (the snapshot endpoint doesn't expose them). Filters
-  that depend on those columns require a paid feed (ORATS/CBOE).
+  free Alpaca tier; switch `OPTIONS_PROVIDER=polygon` (with
+  `POLYGON_API_KEY`) to populate them.
 - `options_snapshot` is a current-only table — each ingestion run
   replaces the symbol's prior rows so stale strikes don't linger after
   the underlying moves.
+- `options_historical` accumulates daily per-contract OHLCV (backfilled
+  from Polygon via `python -m ingestion.options_history --start ... --end ...`).
+  Powers the strategy backtest's `RealChainPricer` mode (CLI flag
+  `--use-real-chain`) and the `iv_backfill` pass that seeds historical
+  `iv_atm`. Polygon Developer doesn't expose historical bid/ask at this
+  tier, so `close` is the stored mark.
 - `earnings` is populated by Finnhub (free tier, US equities only) for
   the next ~90 days; without `FINNHUB_API_KEY` the earnings step
   silently no-ops rather than failing the whole pipeline.
@@ -193,6 +200,8 @@ Schema decisions worth knowing:
 | Reset DB | `make db-reset` |
 | Seed dev watchlist | `cd backend && python -m scripts.seed_dev` |
 | Refresh ticker metadata (sector, market_cap) | `cd backend && python -m ingestion.ticker_metadata` |
+| Backfill historical option chains (Polygon) | `cd backend && python -m ingestion.options_history --start YYYY-MM-DD --end YYYY-MM-DD` |
+| Backfill IV from options_historical | `cd backend && python -m ingestion.iv_backfill --start YYYY-MM-DD --end YYYY-MM-DD` |
 | Full ingestion | `make ingest-full` |
 | Daily ingestion | `make ingest-incremental` |
 | Skip options (fast bars-only) | `python -m ingestion.pipeline --incremental --skip-options` |
@@ -208,6 +217,7 @@ Schema decisions worth knowing:
 | Update indicator snapshot | `cd backend && pytest tests/test_indicators.py --snapshot-update` |
 | Run a filter backtest | `cd backend && python -m backtest.cli --mode filter --config-id N --start YYYY-MM-DD --end YYYY-MM-DD` |
 | Run a strategy backtest | `cd backend && python -m backtest.cli --mode strategy --config-id N --start YYYY-MM-DD --end YYYY-MM-DD --starting-capital 10000` |
+| Strategy backtest with real chain prices (requires options_history backfill) | add `--use-real-chain` to the strategy command |
 
 A typical first run from a clean clone:
 

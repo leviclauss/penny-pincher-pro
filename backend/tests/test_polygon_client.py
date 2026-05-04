@@ -15,7 +15,12 @@ import pytest
 import respx
 
 from ingestion.options_client import OptionSnapshotRecord
-from ingestion.polygon_client import PolygonError, PolygonOptionsClient
+from ingestion.polygon_client import (
+    OptionContractRef,
+    OptionDailyAgg,
+    PolygonError,
+    PolygonOptionsClient,
+)
 
 
 def _entry(
@@ -270,3 +275,215 @@ def test_unparsable_ticker_skipped() -> None:
     )
     out = PolygonOptionsClient(api_key="k", base_url="https://api.polygon.io").get_chain("AAPL")
     assert out == []
+
+
+# --------------------------------------------------------------------- #
+# list_contracts (Phase 2 historical backfill)
+# --------------------------------------------------------------------- #
+
+
+def _contract(
+    *,
+    ticker: str,
+    underlying: str,
+    contract_type: str,
+    strike: float,
+    expiration: str,
+) -> dict[str, object]:
+    return {
+        "ticker": ticker,
+        "underlying_ticker": underlying,
+        "contract_type": contract_type,
+        "strike_price": strike,
+        "expiration_date": expiration,
+    }
+
+
+@respx.mock
+def test_list_contracts_normalizes() -> None:
+    payload = {
+        "results": [
+            _contract(
+                ticker="O:AAPL240517C00170000",
+                underlying="AAPL",
+                contract_type="call",
+                strike=170.0,
+                expiration="2024-05-17",
+            ),
+            _contract(
+                ticker="O:AAPL240517P00170000",
+                underlying="AAPL",
+                contract_type="put",
+                strike=170.0,
+                expiration="2024-05-17",
+            ),
+        ]
+    }
+    route = respx.get("https://api.polygon.io/v3/reference/options/contracts").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+
+    client = PolygonOptionsClient(api_key="k", base_url="https://api.polygon.io")
+    out = client.list_contracts(
+        "AAPL",
+        as_of=date(2024, 5, 1),
+        expiration_gte=date(2024, 5, 1),
+        expiration_lte=date(2024, 7, 1),
+        strike_gte=150.0,
+        strike_lte=190.0,
+    )
+
+    assert len(out) == 2
+    assert all(isinstance(c, OptionContractRef) for c in out)
+    by_type = {c.option_type: c for c in out}
+    call = by_type["call"]
+    assert call.occ == "AAPL240517C00170000"
+    assert call.underlying == "AAPL"
+    assert call.strike == 170.0
+    assert call.expiration == date(2024, 5, 17)
+
+    params = route.calls.last.request.url.params
+    assert params["underlying_ticker"] == "AAPL"
+    assert params["expired"] == "true"
+    assert params["as_of"] == "2024-05-01"
+    assert params["expiration_date.gte"] == "2024-05-01"
+    assert params["expiration_date.lte"] == "2024-07-01"
+    assert params["strike_price.gte"] == "150.0000"
+    assert params["strike_price.lte"] == "190.0000"
+
+
+@respx.mock
+def test_list_contracts_skips_malformed() -> None:
+    payload = {
+        "results": [
+            "not-a-dict",
+            {"ticker": "O:AAPL240517C00170000"},  # missing fields
+            _contract(
+                ticker="O:AAPL240517C00170000",
+                underlying="AAPL",
+                contract_type="call",
+                strike=170.0,
+                expiration="not-a-date",
+            ),
+            _contract(
+                ticker="O:AAPL240517P00170000",
+                underlying="AAPL",
+                contract_type="put",
+                strike=170.0,
+                expiration="2024-05-17",
+            ),
+        ]
+    }
+    respx.get("https://api.polygon.io/v3/reference/options/contracts").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    out = PolygonOptionsClient(api_key="k", base_url="https://api.polygon.io").list_contracts(
+        "AAPL"
+    )
+    assert len(out) == 1
+    assert out[0].option_type == "put"
+
+
+@respx.mock
+def test_list_contracts_paginates() -> None:
+    page1 = {
+        "results": [
+            _contract(
+                ticker="O:AAPL240517C00170000",
+                underlying="AAPL",
+                contract_type="call",
+                strike=170.0,
+                expiration="2024-05-17",
+            ),
+        ],
+        "next_url": "https://api.polygon.io/v3/reference/options/contracts?cursor=abc",
+    }
+    page2 = {
+        "results": [
+            _contract(
+                ticker="O:AAPL240517P00170000",
+                underlying="AAPL",
+                contract_type="put",
+                strike=170.0,
+                expiration="2024-05-17",
+            ),
+        ]
+    }
+    respx.get("https://api.polygon.io/v3/reference/options/contracts").mock(
+        side_effect=[
+            httpx.Response(200, json=page1),
+            httpx.Response(200, json=page2),
+        ]
+    )
+    out = PolygonOptionsClient(api_key="k", base_url="https://api.polygon.io").list_contracts(
+        "AAPL"
+    )
+    assert {c.option_type for c in out} == {"call", "put"}
+
+
+# --------------------------------------------------------------------- #
+# get_contract_aggs
+# --------------------------------------------------------------------- #
+
+
+def _bar(*, ts_ms: int, o: float, h: float, low: float, c: float, v: int) -> dict[str, object]:
+    return {"t": ts_ms, "o": o, "h": h, "l": low, "c": c, "v": v}
+
+
+@respx.mock
+def test_get_contract_aggs_normalizes() -> None:
+    # 2024-05-15 UTC = 1715731200000 ms
+    payload = {
+        "status": "OK",
+        "results": [
+            _bar(ts_ms=1715731200000, o=2.10, h=2.20, low=2.00, c=2.15, v=1234),
+            _bar(ts_ms=1715817600000, o=2.15, h=2.25, low=2.05, c=2.18, v=987),
+        ],
+    }
+    route = respx.get(
+        "https://api.polygon.io/v2/aggs/ticker/O:AAPL240517C00170000/range/1/day/2024-05-15/2024-05-16"
+    ).mock(return_value=httpx.Response(200, json=payload))
+
+    client = PolygonOptionsClient(api_key="k", base_url="https://api.polygon.io")
+    out = client.get_contract_aggs(
+        "AAPL240517C00170000",
+        from_date=date(2024, 5, 15),
+        to_date=date(2024, 5, 16),
+    )
+
+    assert len(out) == 2
+    assert all(isinstance(b, OptionDailyAgg) for b in out)
+    assert out[0].date == date(2024, 5, 15)
+    assert out[0].close == 2.15
+    assert out[0].volume == 1234
+    assert out[1].date == date(2024, 5, 16)
+
+    params = route.calls.last.request.url.params
+    assert params["adjusted"] == "true"
+    assert params["sort"] == "asc"
+
+
+@respx.mock
+def test_get_contract_aggs_handles_empty_results() -> None:
+    respx.get(
+        "https://api.polygon.io/v2/aggs/ticker/O:AAPL240517C00170000/range/1/day/2024-05-15/2024-05-16"
+    ).mock(return_value=httpx.Response(200, json={"status": "OK", "results": []}))
+    out = PolygonOptionsClient(api_key="k", base_url="https://api.polygon.io").get_contract_aggs(
+        "AAPL240517C00170000",
+        from_date=date(2024, 5, 15),
+        to_date=date(2024, 5, 16),
+    )
+    assert out == []
+
+
+@respx.mock
+def test_get_contract_aggs_accepts_bare_occ() -> None:
+    """Caller can pass either the bare OCC or the ``O:`` prefixed form."""
+    respx.get(
+        "https://api.polygon.io/v2/aggs/ticker/O:AAPL240517C00170000/range/1/day/2024-05-15/2024-05-15"
+    ).mock(return_value=httpx.Response(200, json={"results": []}))
+    PolygonOptionsClient(api_key="k", base_url="https://api.polygon.io").get_contract_aggs(
+        "O:AAPL240517C00170000",
+        from_date=date(2024, 5, 15),
+        to_date=date(2024, 5, 15),
+    )
