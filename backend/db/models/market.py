@@ -111,6 +111,50 @@ class OptionsSnapshot(Base):
     )
 
 
+class OptionsHistorical(Base):
+    """Historical option contract daily marks.
+
+    Backfilled from Polygon's per-contract aggregates endpoint. One row per
+    ``(symbol, as_of, expiration, strike, option_type)``. Stores the daily
+    close as the mark — Polygon Developer doesn't expose historical bid/ask
+    or greeks at the snapshot level, so the strategy backtest computes
+    delta on the fly via Black-Scholes against a sigma estimate from
+    ``indicators_daily``.
+
+    Unlike ``options_snapshot`` (current-only, overwritten daily), this
+    table accumulates across the backfill window.
+    """
+
+    __tablename__ = "options_historical"
+
+    symbol: Mapped[str] = mapped_column(String(16), ForeignKey("tickers.symbol"), primary_key=True)
+    as_of: Mapped[DateType] = mapped_column(Date, primary_key=True)
+    expiration: Mapped[DateType] = mapped_column(Date, primary_key=True)
+    strike: Mapped[float] = mapped_column(Float, primary_key=True)
+    option_type: Mapped[str] = mapped_column(String(4), primary_key=True)
+
+    open: Mapped[float | None] = mapped_column(Float, nullable=True)
+    high: Mapped[float | None] = mapped_column(Float, nullable=True)
+    low: Mapped[float | None] = mapped_column(Float, nullable=True)
+    close: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    open_interest: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_options_historical_symbol_as_of", "symbol", "as_of"),
+        Index(
+            "ix_options_historical_symbol_expiration_as_of",
+            "symbol",
+            "expiration",
+            "as_of",
+        ),
+    )
+
+
 class Earnings(Base):
     __tablename__ = "earnings"
 

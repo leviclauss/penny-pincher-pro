@@ -7,6 +7,7 @@ from db.models.market import (
     Earnings,
     IndicatorDaily,
     MacroDaily,
+    OptionsHistorical,
     OptionsSnapshot,
     Ticker,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "IndicatorDaily",
     "JobRun",
     "MacroDaily",
+    "OptionsHistorical",
     "OptionsSnapshot",
     "Position",
     "PositionLeg",
