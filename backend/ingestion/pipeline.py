@@ -62,6 +62,7 @@ from ingestion.persistence import (
     upsert_indicators,
     upsert_iv_indicators,
 )
+from ingestion.polygon_client import PolygonError, PolygonOptionsClient
 from ingestion.yahoo_client import YahooClient
 
 log = get_logger(__name__)
@@ -323,6 +324,26 @@ def _build_earnings_client() -> EarningsSource | None:
         return None
 
 
+def _build_options_client() -> ChainSource:
+    """Pick the option-chain provider based on ``OPTIONS_PROVIDER``.
+
+    Polygon populates OI + volume; Alpaca's free indicative feed doesn't.
+    Falls back to Alpaca if Polygon is requested but no key is configured —
+    keeps the pipeline working in dev without a paid subscription.
+    """
+    settings = get_settings()
+    provider = settings.options_provider.strip().lower()
+    if provider == "polygon":
+        try:
+            return PolygonOptionsClient()
+        except PolygonError:
+            log.warning("pipeline.polygon_unavailable", reason="missing_api_key")
+            return AlpacaOptionsClient()
+    if provider != "alpaca":
+        log.warning("pipeline.unknown_options_provider", provider=provider)
+    return AlpacaOptionsClient()
+
+
 @click.command(context_settings={"show_default": True})
 @click.option(
     "--full/--incremental",
@@ -382,7 +403,7 @@ def cli(
 
     symbol_list = [s.strip().upper() for s in symbols.split(",")] if symbols else None
     client = AlpacaClient()
-    options_client: ChainSource | None = None if skip_options else AlpacaOptionsClient()
+    options_client: ChainSource | None = None if skip_options else _build_options_client()
     earnings_client: EarningsSource | None = None if skip_earnings else _build_earnings_client()
     macro_client: IndexHistorySource | None = None if skip_macro else YahooClient()
 
