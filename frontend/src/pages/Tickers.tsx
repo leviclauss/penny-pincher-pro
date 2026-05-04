@@ -45,7 +45,13 @@ import {
   TableRow,
 } from "@/components/ui/Table";
 import { cn } from "@/lib/utils";
-import { formatDate, formatNumber, formatPercent, pctDistance } from "@/lib/format";
+import {
+  formatDate,
+  formatDateShort,
+  formatNumber,
+  formatPercent,
+  pctDistance,
+} from "@/lib/format";
 
 type SortKey =
   | "symbol"
@@ -223,8 +229,8 @@ export function Tickers(): JSX.Element {
       </header>
 
       <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <CardHeader className="px-3 sm:px-5">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             <div className="flex items-center gap-3">
               <CardTitle>All symbols</CardTitle>
               {anyRunning && (
@@ -234,7 +240,7 @@ export function Tickers(): JSX.Element {
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <Checkbox
                 label="Show hidden"
                 checked={showHidden}
@@ -250,7 +256,7 @@ export function Tickers(): JSX.Element {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-3 pb-3 sm:px-5 sm:pb-5">
           {isLoading && <div className="text-muted-foreground text-sm">Loading…</div>}
           {isError && (
             <div className="text-destructive text-sm">Failed to load tickers.</div>
@@ -262,129 +268,163 @@ export function Tickers(): JSX.Element {
             </div>
           )}
           {data && data.length > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {COLUMNS.map((col) => {
-                    const active = sortKey === col.key;
-                    return (
-                      <TableHead
-                        key={col.key}
-                        className={cn(
-                          "hover:text-foreground cursor-pointer select-none transition-colors",
-                          col.align === "right" && "text-right",
-                          active && "text-foreground",
-                        )}
-                        onClick={() => toggleSort(col.key)}
-                      >
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1.5",
-                            col.align === "right" && "justify-end",
-                          )}
-                        >
-                          {col.label}
-                          {active ? (
-                            sortDir === "asc" ? (
-                              <ArrowUp className="text-primary h-3 w-3" />
-                            ) : (
-                              <ArrowDown className="text-primary h-3 w-3" />
-                            )
-                          ) : (
-                            <ArrowUpDown className="h-3 w-3 opacity-40" />
-                          )}
-                        </span>
-                      </TableHead>
-                    );
-                  })}
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sorted.map((t) => {
-                  const distance = pctDistance(t.last_close, t.ema_200);
-                  return (
-                    <TableRow
+            <>
+              <div className="md:hidden">
+                <MobileSortControl
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSortKeyChange={setSortKey}
+                  onToggleDir={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                />
+                <ul className="divide-border/50 -mx-1 mt-2 divide-y">
+                  {sorted.map((t) => (
+                    <TickerMobileRow
                       key={t.symbol}
-                      onClick={() => navigate(`/tickers/${t.symbol}`)}
-                      className={cn("cursor-pointer", t.is_hidden && "opacity-60")}
-                    >
-                      <TableCell className="font-semibold tracking-tight">
-                        {t.symbol}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground max-w-[180px] truncate">
-                        {t.name ?? "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <TierSelect
-                          tier={t.tier}
-                          onChange={(tier) => tierMutation.mutate({ symbol: t.symbol, tier })}
-                        />
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {t.sector ?? "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatNumber(t.last_close)}
-                      </TableCell>
-                      <TableCell
-                        className={cn(
-                          "text-right font-mono",
-                          distance !== null && distance >= 0 && "text-emerald-300",
-                          distance !== null && distance < 0 && "text-red-300",
-                        )}
-                      >
-                        {formatPercent(distance)}
-                      </TableCell>
-                      <TableCell
-                        className={cn("text-right font-mono", rsiTone(t.rsi_14))}
-                      >
-                        {formatNumber(t.rsi_14, 1)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {t.iv_atm === null ? "—" : `${(t.iv_atm * 100).toFixed(1)}%`}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-right font-mono text-xs">
-                        {formatDate(t.next_earnings_date)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title={t.is_hidden ? "Unhide" : "Hide"}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              hideMutation.mutate({
-                                symbol: t.symbol,
-                                hidden: !t.is_hidden,
-                              });
-                            }}
-                          >
-                            {t.is_hidden ? (
-                              <Eye className="h-4 w-4" />
-                            ) : (
-                              <EyeOff className="h-4 w-4" />
+                      ticker={t}
+                      onOpen={() => navigate(`/tickers/${t.symbol}`)}
+                      onTierChange={(tier) =>
+                        tierMutation.mutate({ symbol: t.symbol, tier })
+                      }
+                      onToggleHidden={() =>
+                        hideMutation.mutate({
+                          symbol: t.symbol,
+                          hidden: !t.is_hidden,
+                        })
+                      }
+                      onDelete={() => setConfirmDelete(t)}
+                    />
+                  ))}
+                </ul>
+              </div>
+
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {COLUMNS.map((col) => {
+                        const active = sortKey === col.key;
+                        return (
+                          <TableHead
+                            key={col.key}
+                            className={cn(
+                              "hover:text-foreground cursor-pointer select-none transition-colors",
+                              col.align === "right" && "text-right",
+                              active && "text-foreground",
                             )}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Delete"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setConfirmDelete(t);
-                            }}
+                            onClick={() => toggleSort(col.key)}
                           >
-                            <Trash2 className="text-destructive h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1.5",
+                                col.align === "right" && "justify-end",
+                              )}
+                            >
+                              {col.label}
+                              {active ? (
+                                sortDir === "asc" ? (
+                                  <ArrowUp className="text-primary h-3 w-3" />
+                                ) : (
+                                  <ArrowDown className="text-primary h-3 w-3" />
+                                )
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3 opacity-40" />
+                              )}
+                            </span>
+                          </TableHead>
+                        );
+                      })}
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {sorted.map((t) => {
+                      const distance = pctDistance(t.last_close, t.ema_200);
+                      return (
+                        <TableRow
+                          key={t.symbol}
+                          onClick={() => navigate(`/tickers/${t.symbol}`)}
+                          className={cn("cursor-pointer", t.is_hidden && "opacity-60")}
+                        >
+                          <TableCell className="font-semibold tracking-tight">
+                            {t.symbol}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground max-w-[180px] truncate">
+                            {t.name ?? "—"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <TierSelect
+                              tier={t.tier}
+                              onChange={(tier) =>
+                                tierMutation.mutate({ symbol: t.symbol, tier })
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {t.sector ?? "—"}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(t.last_close)}
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              "text-right font-mono",
+                              distance !== null && distance >= 0 && "text-emerald-300",
+                              distance !== null && distance < 0 && "text-red-300",
+                            )}
+                          >
+                            {formatPercent(distance)}
+                          </TableCell>
+                          <TableCell
+                            className={cn("text-right font-mono", rsiTone(t.rsi_14))}
+                          >
+                            {formatNumber(t.rsi_14, 1)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {t.iv_atm === null ? "—" : `${(t.iv_atm * 100).toFixed(1)}%`}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-right font-mono text-xs">
+                            {formatDate(t.next_earnings_date)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title={t.is_hidden ? "Unhide" : "Hide"}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  hideMutation.mutate({
+                                    symbol: t.symbol,
+                                    hidden: !t.is_hidden,
+                                  });
+                                }}
+                              >
+                                {t.is_hidden ? (
+                                  <Eye className="h-4 w-4" />
+                                ) : (
+                                  <EyeOff className="h-4 w-4" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Delete"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setConfirmDelete(t);
+                                }}
+                              >
+                                <Trash2 className="text-destructive h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -408,6 +448,163 @@ export function Tickers(): JSX.Element {
         }
         pendingDelete={deleteMutation.isPending}
       />
+    </div>
+  );
+}
+
+interface MobileSortControlProps {
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSortKeyChange: (key: SortKey) => void;
+  onToggleDir: () => void;
+}
+
+function MobileSortControl({
+  sortKey,
+  sortDir,
+  onSortKeyChange,
+  onToggleDir,
+}: MobileSortControlProps): JSX.Element {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-muted-foreground text-[11px] font-medium uppercase tracking-wider">
+        Sort
+      </span>
+      <select
+        value={sortKey}
+        onChange={(e) => onSortKeyChange(e.target.value as SortKey)}
+        className="border-border bg-background text-foreground focus-visible:ring-ring h-8 flex-1 rounded-md border px-2 text-sm focus-visible:outline-none focus-visible:ring-2"
+        aria-label="Sort by"
+      >
+        {COLUMNS.map((c) => (
+          <option key={c.key} value={c.key}>
+            {c.label}
+          </option>
+        ))}
+      </select>
+      <Button
+        variant="outline"
+        size="icon"
+        className="h-8 w-8 shrink-0"
+        onClick={onToggleDir}
+        title={sortDir === "asc" ? "Ascending" : "Descending"}
+        aria-label={`Toggle sort direction (currently ${sortDir})`}
+      >
+        {sortDir === "asc" ? (
+          <ArrowUp className="h-4 w-4" />
+        ) : (
+          <ArrowDown className="h-4 w-4" />
+        )}
+      </Button>
+    </div>
+  );
+}
+
+interface TickerMobileRowProps {
+  ticker: TickerSummary;
+  onOpen: () => void;
+  onTierChange: (tier: number | null) => void;
+  onToggleHidden: () => void;
+  onDelete: () => void;
+}
+
+function TickerMobileRow({
+  ticker,
+  onOpen,
+  onTierChange,
+  onToggleHidden,
+  onDelete,
+}: TickerMobileRowProps): JSX.Element {
+  const distance = pctDistance(ticker.last_close, ticker.ema_200);
+  const distanceTone =
+    distance === null
+      ? "text-muted-foreground"
+      : distance >= 0
+        ? "text-emerald-300"
+        : "text-red-300";
+
+  return (
+    <li
+      onClick={onOpen}
+      className={cn(
+        "active:bg-accent/40 cursor-pointer px-1 py-3 transition-colors",
+        ticker.is_hidden && "opacity-60",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-semibold tracking-tight">
+              {ticker.symbol}
+            </span>
+            <TierSelect tier={ticker.tier} onChange={onTierChange} />
+          </div>
+          <div className="text-muted-foreground mt-0.5 truncate text-xs">
+            {ticker.name ?? "—"}
+            {ticker.sector ? ` · ${ticker.sector}` : ""}
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="font-mono text-base">{formatNumber(ticker.last_close)}</div>
+          <div className={cn("font-mono text-xs", distanceTone)}>
+            {formatPercent(distance)}
+            <span className="text-muted-foreground ml-1 text-[10px] uppercase tracking-wider">
+              200EMA
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <MobileStat label="RSI" value={formatNumber(ticker.rsi_14, 1)} valueClass={rsiTone(ticker.rsi_14)} />
+        <MobileStat
+          label="IV ATM"
+          value={ticker.iv_atm === null ? "—" : `${(ticker.iv_atm * 100).toFixed(1)}%`}
+        />
+        <MobileStat label="Next ER" value={formatDateShort(ticker.next_earnings_date)} />
+      </div>
+
+      <div className="mt-2 flex items-center justify-end gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          title={ticker.is_hidden ? "Unhide" : "Hide"}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleHidden();
+          }}
+        >
+          {ticker.is_hidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          title="Delete"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+        >
+          <Trash2 className="text-destructive h-4 w-4" />
+        </Button>
+      </div>
+    </li>
+  );
+}
+
+interface MobileStatProps {
+  label: string;
+  value: string;
+  valueClass?: string;
+}
+
+function MobileStat({ label, value, valueClass }: MobileStatProps): JSX.Element {
+  return (
+    <div className="bg-muted/30 rounded-md px-2 py-1.5">
+      <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+        {label}
+      </div>
+      <div className={cn("font-mono text-sm", valueClass)}>{value}</div>
     </div>
   );
 }
