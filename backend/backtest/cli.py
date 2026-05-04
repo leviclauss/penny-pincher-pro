@@ -121,6 +121,17 @@ def _parse_date(_ctx: click.Context, _param: click.Parameter, value: str) -> dat
         "an options-history backfill (see ingestion/options_history.py)."
     ),
 )
+@click.option(
+    "--hold-losers-to-expiry",
+    is_flag=True,
+    default=False,
+    help=(
+        "(strategy mode) True-wheel discipline: skip the manage-DTE close "
+        "when buying back the leg would realize a loss. ITM puts ride to "
+        "assignment (shares + covered call next), ITM calls deliver shares "
+        "at the cost-basis-floored strike. Profit-take rule is unchanged."
+    ),
+)
 def cli(
     mode: str,
     config_id: int,
@@ -138,6 +149,7 @@ def cli(
     fee_per_contract: float,
     slippage_per_share: float,
     use_real_chain: bool,
+    hold_losers_to_expiry: bool,
 ) -> None:
     """Replay one screener config across history."""
     settings = get_settings()
@@ -165,6 +177,7 @@ def cli(
             fee_per_contract=fee_per_contract,
             slippage_per_share=slippage_per_share,
             risk_free_rate=settings.risk_free_rate,
+            hold_losers_to_expiry=hold_losers_to_expiry,
         )
         _run_strategy_mode(
             config_id=config_id,
