@@ -202,12 +202,6 @@ class PolygonOptionsClient:
 
         return records
 
-    @retry(
-        retry=retry_if_exception_type(_RETRYABLE_EXCEPTIONS),
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1, min=1, max=16),
-        reraise=True,
-    )
     def list_contracts(
         self,
         underlying: str,
@@ -225,6 +219,11 @@ class PolygonOptionsClient:
         ``include_expired=True`` (default) is required to discover contracts
         that have already matured — without it Polygon only returns the
         currently-live chain, which is useless for historical backfill.
+
+        Polygon's ``expired`` query param is exclusive: ``expired=true``
+        returns ONLY already-expired contracts and ``expired=false`` returns
+        ONLY live ones. To honor ``include_expired=True`` we issue both
+        calls and merge by OCC ticker.
         """
         log.info(
             "polygon.list_contracts",
@@ -232,11 +231,44 @@ class PolygonOptionsClient:
             as_of=str(as_of) if as_of else None,
             expiration_gte=str(expiration_gte) if expiration_gte else None,
             expiration_lte=str(expiration_lte) if expiration_lte else None,
+            include_expired=include_expired,
         )
+        flags = (False, True) if include_expired else (False,)
+        seen: dict[str, OptionContractRef] = {}
+        for expired in flags:
+            for c in self._list_contracts_one(
+                underlying,
+                as_of=as_of,
+                expiration_gte=expiration_gte,
+                expiration_lte=expiration_lte,
+                strike_gte=strike_gte,
+                strike_lte=strike_lte,
+                expired=expired,
+            ):
+                seen[c.occ] = c
+        return list(seen.values())
+
+    @retry(
+        retry=retry_if_exception_type(_RETRYABLE_EXCEPTIONS),
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=16),
+        reraise=True,
+    )
+    def _list_contracts_one(
+        self,
+        underlying: str,
+        *,
+        as_of: date | None,
+        expiration_gte: date | None,
+        expiration_lte: date | None,
+        strike_gte: float | None,
+        strike_lte: float | None,
+        expired: bool,
+    ) -> list[OptionContractRef]:
         params: dict[str, str] = {
             "underlying_ticker": underlying.upper(),
             "limit": str(DEFAULT_PAGE_LIMIT),
-            "expired": "true" if include_expired else "false",
+            "expired": "true" if expired else "false",
         }
         if as_of is not None:
             params["as_of"] = as_of.isoformat()
@@ -269,6 +301,7 @@ class PolygonOptionsClient:
                 "polygon.contracts_pagination_capped",
                 underlying=underlying,
                 max_pages=MAX_PAGES,
+                expired=expired,
             )
 
         return contracts

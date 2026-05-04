@@ -331,6 +331,7 @@ def test_list_contracts_normalizes() -> None:
         expiration_lte=date(2024, 7, 1),
         strike_gte=150.0,
         strike_lte=190.0,
+        include_expired=False,
     )
 
     assert len(out) == 2
@@ -344,7 +345,7 @@ def test_list_contracts_normalizes() -> None:
 
     params = route.calls.last.request.url.params
     assert params["underlying_ticker"] == "AAPL"
-    assert params["expired"] == "true"
+    assert params["expired"] == "false"
     assert params["as_of"] == "2024-05-01"
     assert params["expiration_date.gte"] == "2024-05-01"
     assert params["expiration_date.lte"] == "2024-07-01"
@@ -378,7 +379,7 @@ def test_list_contracts_skips_malformed() -> None:
         return_value=httpx.Response(200, json=payload)
     )
     out = PolygonOptionsClient(api_key="k", base_url="https://api.polygon.io").list_contracts(
-        "AAPL"
+        "AAPL", include_expired=False
     )
     assert len(out) == 1
     assert out[0].option_type == "put"
@@ -416,9 +417,77 @@ def test_list_contracts_paginates() -> None:
         ]
     )
     out = PolygonOptionsClient(api_key="k", base_url="https://api.polygon.io").list_contracts(
-        "AAPL"
+        "AAPL", include_expired=False
     )
     assert {c.option_type for c in out} == {"call", "put"}
+
+
+@respx.mock
+def test_list_contracts_merges_live_and_expired() -> None:
+    """include_expired=True must call the API twice (expired=false + true).
+
+    Polygon's ``expired`` flag is exclusive — a single ``expired=true`` call
+    returns ONLY already-matured contracts and silently drops live ones.
+    Regression: backfill against a window straddling "today" was missing
+    every contract whose expiration hadn't yet passed.
+    """
+    live_only = {
+        "results": [
+            _contract(
+                ticker="O:AAPL240920C00200000",
+                underlying="AAPL",
+                contract_type="call",
+                strike=200.0,
+                expiration="2024-09-20",
+            ),
+        ]
+    }
+    expired_only = {
+        "results": [
+            _contract(
+                ticker="O:AAPL240517P00170000",
+                underlying="AAPL",
+                contract_type="put",
+                strike=170.0,
+                expiration="2024-05-17",
+            ),
+        ]
+    }
+    captured: list[str] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        flag = request.url.params["expired"]
+        captured.append(flag)
+        return httpx.Response(200, json=expired_only if flag == "true" else live_only)
+
+    respx.get("https://api.polygon.io/v3/reference/options/contracts").mock(side_effect=_handler)
+
+    out = PolygonOptionsClient(api_key="k", base_url="https://api.polygon.io").list_contracts(
+        "AAPL"
+    )
+
+    assert sorted(captured) == ["false", "true"]
+    occs = {c.occ for c in out}
+    assert occs == {"AAPL240920C00200000", "AAPL240517P00170000"}
+
+
+@respx.mock
+def test_list_contracts_dedupes_overlap_between_calls() -> None:
+    """If a contract somehow appears in both expired and live responses, dedupe by OCC."""
+    same = _contract(
+        ticker="O:AAPL240517P00170000",
+        underlying="AAPL",
+        contract_type="put",
+        strike=170.0,
+        expiration="2024-05-17",
+    )
+    respx.get("https://api.polygon.io/v3/reference/options/contracts").mock(
+        return_value=httpx.Response(200, json={"results": [same]})
+    )
+    out = PolygonOptionsClient(api_key="k", base_url="https://api.polygon.io").list_contracts(
+        "AAPL"
+    )
+    assert len(out) == 1
 
 
 # --------------------------------------------------------------------- #
