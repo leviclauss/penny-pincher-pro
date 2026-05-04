@@ -22,14 +22,17 @@ For every NYSE trading day in ``[start_date, end_date]`` the simulator:
 Persistence:
 
 - One ``backtest_runs`` row per invocation.
-- One ``backtest_trades`` row per *closed* leg, with ``leg_type`` set to
-  one of ``csp_open``/``csp_close``/``csp_assigned``/``csp_expired`` for
-  puts and ``cc_open``/``cc_close``/``cc_assigned``/``cc_expired`` for
-  calls. Covered-call assignments also emit a ``share_sold`` row that
-  captures the per-lot share exit (``strike`` proceeds vs. share cost
-  basis) — this keeps option premium P/L and underlying-stock P/L on
-  separate rows. Open legs at the end of the run are also flushed
-  (with no ``exit_date``) so the UI can show what's still in flight.
+- One ``backtest_trades`` row per leg, with ``leg_type`` set to one of
+  ``csp_open``/``csp_close``/``csp_assigned``/``csp_expired`` for puts
+  and ``cc_open``/``cc_close``/``cc_assigned``/``cc_expired`` for calls.
+  Each ``*_open`` row is written when the leg is opened and stays without
+  an ``exit_date`` until the matching close/expire/assign row is appended
+  on the day it settles. Positions still open at the end of the backtest
+  window keep their ``*_open`` row with ``exit_date=NULL`` so the UI can
+  show in-flight legs. Covered-call assignments also emit a ``share_sold``
+  row that captures the per-lot share exit (``strike`` proceeds vs. share
+  cost basis) — this keeps option premium P/L and underlying-stock P/L on
+  separate rows.
 - One ``backtest_equity`` row per trading day.
 """
 
@@ -241,41 +244,6 @@ def run_strategy_backtest(
     try:
         for day in trading_days:
             _step_day(session, state, day)
-
-        # Flush still-open legs so the UI can render in-flight positions.
-        for opt in list(portfolio.options):
-            last_spot = state.last_known_spot.get(opt.symbol)
-            state.pending.append(
-                _PendingTrade(
-                    cycle_id=opt.cycle_id,
-                    symbol=opt.symbol,
-                    leg_type=_open_leg_label(opt.leg_type),
-                    entry_date=opt.entry_date,
-                    exit_date=None,
-                    strike=opt.strike,
-                    expiration=opt.expiration,
-                    entry_price=opt.entry_premium,
-                    exit_price=None,
-                    outcome="open",
-                    realized_pnl=None,
-                    fees=opt.fees_open,
-                    meta={
-                        "leg": opt.leg_type,
-                        "contracts": opt.contracts,
-                        "shares_covered": opt.shares_covered,
-                        "strike": opt.strike,
-                        "underlying_cost_basis": (
-                            round(opt.cost_basis, 4) if opt.cost_basis is not None else None
-                        ),
-                        "premium_per_share": round(opt.entry_premium, 4),
-                        "premium_total_credit": round(opt.entry_premium * opt.shares_covered, 2),
-                        "fees_open": round(opt.fees_open, 2),
-                        "spot_at_run_end": (round(last_spot, 4) if last_spot is not None else None),
-                        "explanation": ("Position still open at end of backtest window."),
-                    },
-                )
-            )
-
         _flush_trades(session, run_id, state.pending)
     except Exception as exc:
         _mark_failed(session, run_id, f"{type(exc).__name__}: {exc}")
@@ -1128,10 +1096,6 @@ def _trading_days(calendar_name: str, start: date, end: date) -> list[date]:
     cal = mcal.get_calendar(calendar_name)
     schedule = cal.schedule(start_date=start, end_date=end)
     return [pd.Timestamp(ts).date() for ts in schedule.index]
-
-
-def _open_leg_label(leg_type: str) -> str:
-    return LEG_CSP_OPEN if leg_type == "short_put" else LEG_CC_OPEN
 
 
 def _flush_trades(session: Session, run_id: int, pending: list[_PendingTrade]) -> None:
