@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 from typing import Any
 
 import pandas as pd
@@ -56,11 +56,10 @@ from backtest.portfolio import (
 )
 from backtest.pricing import (
     DEFAULT_RISK_FREE_RATE,
+    Pricer,
+    SyntheticPricer,
     estimate_sigma,
-    price_option,
     realized_vol_from_closes,
-    select_call_strike,
-    select_put_strike,
 )
 from core.logging import get_logger
 from db.models.backtest import (
@@ -176,6 +175,7 @@ def run_strategy_backtest(
     symbols: Sequence[str] | None = None,
     calendar_name: str = DEFAULT_CALENDAR,
     existing_run_id: int | None = None,
+    pricer: Pricer | None = None,
 ) -> StrategyRunSummary:
     """Run the wheel simulator and persist results.
 
@@ -235,6 +235,7 @@ def run_strategy_backtest(
         params=params,
         config=parsed,
         universe=universe,
+        pricer=pricer or SyntheticPricer(),
     )
 
     try:
@@ -329,6 +330,7 @@ class _SimState:
     params: StrategyParams
     config: ParsedConfig
     universe: Sequence[str]
+    pricer: Pricer = field(default_factory=SyntheticPricer)
     pending: list[_PendingTrade] = field(default_factory=list)
     last_known_spot: dict[str, float] = field(default_factory=dict)
     cycles_completed: int = 0
@@ -665,11 +667,12 @@ def _apply_management_rules(state: _SimState, day: date, spot_cache: dict[str, M
         if spot is None:
             continue
         flag = "p" if opt.leg_type == "short_put" else "c"
-        quote = price_option(
+        quote = state.pricer.price_option(
+            symbol=opt.symbol,
+            as_of=day,
             option_type=flag,
             spot=spot.spot,
             strike=opt.strike,
-            as_of=day,
             expiration=opt.expiration,
             sigma=spot.sigma,
             risk_free_rate=state.params.risk_free_rate,
@@ -789,7 +792,6 @@ def _open_covered_calls(
     day: date,
     spot_cache: dict[str, MarkInputs],
 ) -> None:
-    expiration = _expiration_for(day, state.params.dte_target)
     for symbol in {lot.symbol for lot in state.portfolio.shares}:
         if any(
             opt.symbol == symbol and opt.leg_type == "covered_call"
@@ -809,22 +811,29 @@ def _open_covered_calls(
             if total_shares
             else spot.spot
         )
+        expiration = state.pricer.select_expiration(
+            symbol=symbol, as_of=day, dte_target=state.params.dte_target
+        )
         days_to_expiry = (expiration - day).days
         if days_to_expiry < state.params.min_dte_for_entry:
             continue
-        strike = select_call_strike(
+        strike = state.pricer.select_call_strike(
+            symbol=symbol,
+            as_of=day,
             spot=spot.spot,
             cost_basis=weighted_basis,
             target_delta=state.params.delta_target,
+            expiration=expiration,
             sigma=spot.sigma,
             days_to_expiry=days_to_expiry,
             risk_free_rate=state.params.risk_free_rate,
         )
-        quote = price_option(
+        quote = state.pricer.price_option(
+            symbol=symbol,
+            as_of=day,
             option_type="c",
             spot=spot.spot,
             strike=strike,
-            as_of=day,
             expiration=expiration,
             sigma=spot.sigma,
             risk_free_rate=state.params.risk_free_rate,
@@ -904,10 +913,6 @@ def _open_short_puts(
     if not candidates:
         return
     open_now = state.portfolio.open_symbols()
-    expiration = _expiration_for(day, state.params.dte_target)
-    days_to_expiry = (expiration - day).days
-    if days_to_expiry < state.params.min_dte_for_entry:
-        return
 
     for evaluation in candidates:
         if state.portfolio.total_open_positions() >= state.params.max_concurrent_positions:
@@ -918,9 +923,18 @@ def _open_short_puts(
         spot = spot_cache.get(symbol)
         if spot is None:
             continue
-        strike = select_put_strike(
+        expiration = state.pricer.select_expiration(
+            symbol=symbol, as_of=day, dte_target=state.params.dte_target
+        )
+        days_to_expiry = (expiration - day).days
+        if days_to_expiry < state.params.min_dte_for_entry:
+            continue
+        strike = state.pricer.select_put_strike(
+            symbol=symbol,
+            as_of=day,
             spot=spot.spot,
             target_delta=state.params.delta_target,
+            expiration=expiration,
             sigma=spot.sigma,
             days_to_expiry=days_to_expiry,
             risk_free_rate=state.params.risk_free_rate,
@@ -929,11 +943,12 @@ def _open_short_puts(
         collateral = collateral_required(strike, contracts)
         if state.portfolio.free_cash < collateral:
             continue
-        quote = price_option(
+        quote = state.pricer.price_option(
+            symbol=symbol,
+            as_of=day,
             option_type="p",
             spot=spot.spot,
             strike=strike,
-            as_of=day,
             expiration=expiration,
             sigma=spot.sigma,
             risk_free_rate=state.params.risk_free_rate,
@@ -1100,20 +1115,6 @@ def _take_lots(lots: list[ShareLot], symbol: str, shares_needed: int) -> list[Sh
             lot.shares -= remaining
             remaining = 0
     return out
-
-
-def _expiration_for(day: date, dte_target: int) -> date:
-    """Pick the next standard monthly-style expiration date.
-
-    The wheel commonly targets the closest weekly/monthly expiration to
-    ``dte_target``. We approximate with "the Friday closest to
-    ``day + dte_target``" — good enough for synthetic pricing.
-    """
-    target = day + timedelta(days=dte_target)
-    # Friday is weekday 4.
-    offset = (4 - target.weekday()) % 7
-    expiration = target + timedelta(days=offset)
-    return expiration
 
 
 def _load_universe(session: Session, symbols: Sequence[str] | None) -> list[str]:
