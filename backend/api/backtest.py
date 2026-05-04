@@ -31,6 +31,7 @@ from db.models.backtest import (
     BacktestRun,
     BacktestTrade,
 )
+from db.models.market import MacroDaily
 from db.models.screener import FilterConfig
 
 log = get_logger(__name__)
@@ -120,6 +121,7 @@ class BacktestEquityPoint(BaseModel):
     cash: float
     collateral_locked: float
     unrealized_pnl: float
+    spy_benchmark: float | None = None
 
 
 @router.get("/runs", response_model=list[BacktestRunOut])
@@ -255,6 +257,39 @@ def list_equity(run_id: int) -> list[BacktestEquityPoint]:
             .scalars()
             .all()
         )
+        if not rows:
+            return []
+
+        # Build a {date: spy_close} map from macro_daily for the run's date range.
+        macro_rows = (
+            session.execute(
+                select(MacroDaily.date, MacroDaily.spy_close)
+                .where(
+                    MacroDaily.date >= rows[0].date,
+                    MacroDaily.date <= rows[-1].date,
+                    MacroDaily.spy_close.is_not(None),
+                )
+                .order_by(MacroDaily.date)
+            )
+            .all()
+        )
+        spy_by_date: dict[DateType, float] = {r.date: float(r.spy_close) for r in macro_rows}  # type: ignore[arg-type]
+
+        # Normalize SPY to the strategy's starting capital using the first
+        # available SPY close on or after the run's first equity date.
+        spy_start: float | None = None
+        for eq_row in rows:
+            if eq_row.date in spy_by_date:
+                spy_start = spy_by_date[eq_row.date]
+                break
+
+        capital = float(run.starting_capital)
+
+        def _spy_benchmark(d: DateType) -> float | None:
+            if spy_start is None or d not in spy_by_date:
+                return None
+            return capital * spy_by_date[d] / spy_start
+
         return [
             BacktestEquityPoint(
                 date=row.date,
@@ -262,6 +297,7 @@ def list_equity(run_id: int) -> list[BacktestEquityPoint]:
                 cash=row.cash,
                 collateral_locked=row.collateral_locked,
                 unrealized_pnl=row.unrealized_pnl,
+                spy_benchmark=_spy_benchmark(row.date),
             )
             for row in rows
         ]
