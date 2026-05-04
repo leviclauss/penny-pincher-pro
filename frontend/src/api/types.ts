@@ -409,6 +409,7 @@ export interface BacktestEquityPoint {
   cash: number;
   collateral_locked: number;
   unrealized_pnl: number;
+  spy_benchmark: number | null;
 }
 
 export interface StrategyParamsIn {

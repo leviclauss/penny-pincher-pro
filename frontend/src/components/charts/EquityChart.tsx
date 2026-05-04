@@ -2,6 +2,8 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Legend,
+  Line,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -13,6 +15,7 @@ import { formatDate, formatDateShort } from "@/lib/format";
 
 const AXIS_COLOR = "hsl(240 5% 50%)";
 const GRID_COLOR = "hsl(240 5% 16% / 0.7)";
+const SPY_COLOR = "#94a3b8";
 
 export function EquityChart({
   points,
@@ -28,7 +31,13 @@ export function EquityChart({
       </div>
     );
   }
-  const data = points.map((p) => ({ date: p.date, equity: p.equity }));
+
+  const hasSpy = points.some((p) => p.spy_benchmark != null);
+  const data = points.map((p) => ({
+    date: p.date,
+    equity: p.equity,
+    spy: p.spy_benchmark ?? undefined,
+  }));
 
   return (
     <div className="h-[260px] w-full">
@@ -83,9 +92,20 @@ export function EquityChart({
             labelStyle={{ color: "hsl(var(--muted-foreground))", marginBottom: 4 }}
             labelFormatter={(label: string) => formatDate(label)}
             formatter={(value: number | string) =>
-              typeof value === "number" ? `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : value
+              typeof value === "number"
+                ? `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                : value
             }
           />
+          {hasSpy && (
+            <Legend
+              verticalAlign="top"
+              align="right"
+              iconType="line"
+              iconSize={12}
+              wrapperStyle={{ fontSize: 11, paddingBottom: 4 }}
+            />
+          )}
           <Area
             type="monotone"
             dataKey="equity"
@@ -93,8 +113,21 @@ export function EquityChart({
             strokeWidth={1.75}
             fill="url(#equityGradient)"
             isAnimationActive={false}
-            name="Equity"
+            name="Strategy"
           />
+          {hasSpy && (
+            <Line
+              type="monotone"
+              dataKey="spy"
+              stroke={SPY_COLOR}
+              strokeWidth={1.25}
+              strokeDasharray="4 3"
+              dot={false}
+              isAnimationActive={false}
+              name="SPY (buy & hold)"
+              connectNulls
+            />
+          )}
         </AreaChart>
       </ResponsiveContainer>
     </div>
