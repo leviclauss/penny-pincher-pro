@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
+import { PortfolioSelect } from "@/components/positions/PortfolioSelect";
 import { cn } from "@/lib/utils";
 import { todayIso } from "@/lib/positions";
 
@@ -37,6 +38,7 @@ export function OpenCoveredCallDialog({ open, onOpenChange }: Props): JSX.Elemen
   const [credit, setCredit] = useState("");
   const [fees, setFees] = useState("0");
   const [notes, setNotes] = useState("");
+  const [portfolioId, setPortfolioId] = useState<number | null>(null);
 
   const mutation = useMutation({
     mutationFn: openCoveredCallFresh,
@@ -60,6 +62,7 @@ export function OpenCoveredCallDialog({ open, onOpenChange }: Props): JSX.Elemen
       setCredit("");
       setFees("0");
       setNotes("");
+      setPortfolioId(null);
       mutation.reset();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,6 +99,7 @@ export function OpenCoveredCallDialog({ open, onOpenChange }: Props): JSX.Elemen
       credit: Number(credit),
       fees: fees ? Number(fees) : 0,
       notes: notes.trim() || null,
+      portfolio_id: portfolioId,
     });
   };
 
@@ -248,7 +252,13 @@ export function OpenCoveredCallDialog({ open, onOpenChange }: Props): JSX.Elemen
                 onChange={(e) => setFees(e.target.value)}
               />
             </Field>
-            <div />
+            <Field label="Portfolio" htmlFor="occ-portfolio">
+              <PortfolioSelect
+                id="occ-portfolio"
+                value={portfolioId}
+                onChange={setPortfolioId}
+              />
+            </Field>
             <div className="col-span-2 space-y-1">
               <label
                 className="text-foreground text-xs font-medium"

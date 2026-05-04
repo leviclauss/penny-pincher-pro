@@ -1,11 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, Plus } from "lucide-react";
-import { fetchPositions } from "@/api/client";
-import type { PositionLegOut, PositionOut, PositionState } from "@/api/types";
+import { ChevronDown, Loader2, Plus, Settings, X } from "lucide-react";
+import {
+  createPortfolio,
+  deletePortfolio,
+  fetchPortfolios,
+  fetchPositions,
+} from "@/api/client";
+import type {
+  PortfolioOut,
+  PositionLegOut,
+  PositionOut,
+  PositionState,
+} from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/Dialog";
+import { Input } from "@/components/ui/Input";
 import {
   Table,
   TableBody,
@@ -23,9 +42,11 @@ import { STATE_LABELS, STATE_TONES, formatCurrency, pnlTone } from "@/lib/positi
 
 type OpenDialog = null | "short_put" | "long_shares" | "covered_call";
 
-type FilterValue = "all" | "open" | PositionState;
+type StateFilterValue = "all" | "open" | PositionState;
+/** Portfolio filter: "all" = no filter, 0 = unassigned, positive int = portfolio id. */
+type PortfolioFilterValue = "all" | number;
 
-const FILTERS: { value: FilterValue; label: string }[] = [
+const STATE_FILTERS: { value: StateFilterValue; label: string }[] = [
   { value: "open", label: "Open" },
   { value: "short_put", label: "Short put" },
   { value: "long_shares", label: "Long shares" },
@@ -76,29 +97,71 @@ function StateBadge({ state }: { state: string }): JSX.Element {
   );
 }
 
+function PortfolioBadge({ name }: { name: string | null }): JSX.Element {
+  return (
+    <span
+      className={cn(
+        "ring-border bg-muted/40 text-muted-foreground inline-flex max-w-[10rem] truncate rounded-full px-2 py-0.5 text-[10px] font-medium ring-1",
+        name === null && "italic",
+      )}
+      title={name ?? "No portfolio"}
+    >
+      {name ?? "Unassigned"}
+    </span>
+  );
+}
+
 export function Positions(): JSX.Element {
   const navigate = useNavigate();
-  const [filter, setFilter] = useState<FilterValue>("open");
+  const [stateFilter, setStateFilter] = useState<StateFilterValue>("open");
+  const [portfolioFilter, setPortfolioFilter] = useState<PortfolioFilterValue>("all");
   const [openDialog, setOpenDialog] = useState<OpenDialog>(null);
+  const [manageOpen, setManageOpen] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["positions", "list"],
     queryFn: () => fetchPositions(),
   });
 
+  const { data: portfolios } = useQuery({
+    queryKey: ["portfolios"],
+    queryFn: fetchPortfolios,
+  });
+
+  const portfolioById = useMemo(() => {
+    const m = new Map<number, PortfolioOut>();
+    for (const p of portfolios ?? []) m.set(p.id, p);
+    return m;
+  }, [portfolios]);
+
   const filtered = useMemo(() => {
     if (!data) return [];
-    if (filter === "all") return data;
-    if (filter === "open") return data.filter((p) => p.state !== "closed");
-    return data.filter((p) => p.state === filter);
-  }, [data, filter]);
+    let rows = data;
+    if (stateFilter === "open") {
+      rows = rows.filter((p) => p.state !== "closed");
+    } else if (stateFilter !== "all") {
+      rows = rows.filter((p) => p.state === stateFilter);
+    }
+    if (portfolioFilter === 0) {
+      rows = rows.filter((p) => p.portfolio_id === null);
+    } else if (portfolioFilter !== "all") {
+      rows = rows.filter((p) => p.portfolio_id === portfolioFilter);
+    }
+    return rows;
+  }, [data, stateFilter, portfolioFilter]);
 
   const stats = useMemo(() => {
-    if (!data) return { open: 0, byState: {} as Record<string, number>, premium: 0 };
+    const scope = data ?? [];
+    const inPortfolio =
+      portfolioFilter === "all"
+        ? scope
+        : portfolioFilter === 0
+          ? scope.filter((p) => p.portfolio_id === null)
+          : scope.filter((p) => p.portfolio_id === portfolioFilter);
     const byState: Record<string, number> = {};
     let premium = 0;
     let open = 0;
-    for (const p of data) {
+    for (const p of inPortfolio) {
       byState[p.state] = (byState[p.state] ?? 0) + 1;
       if (p.state !== "closed") {
         open += 1;
@@ -106,7 +169,7 @@ export function Positions(): JSX.Element {
       }
     }
     return { open, byState, premium };
-  }, [data]);
+  }, [data, portfolioFilter]);
 
   return (
     <div className="space-y-6">
@@ -122,7 +185,17 @@ export function Positions(): JSX.Element {
             run; trigger it from the Jobs page if numbers look stale.
           </p>
         </div>
-        <AddPositionMenu onChoose={setOpenDialog} />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setManageOpen(true)}
+            title="Manage portfolios"
+          >
+            <Settings className="mr-1 h-4 w-4" />
+            Portfolios
+          </Button>
+          <AddPositionMenu onChoose={setOpenDialog} />
+        </div>
       </header>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -143,24 +216,24 @@ export function Positions(): JSX.Element {
       </div>
 
       <Card>
-        <CardHeader className="px-3 sm:px-5">
+        <CardHeader className="space-y-3 px-3 sm:px-5">
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             <CardTitle>
-              {filter === "all"
+              {stateFilter === "all"
                 ? "All positions"
-                : filter === "open"
+                : stateFilter === "open"
                   ? "Open positions"
-                  : STATE_LABELS[filter]}
+                  : STATE_LABELS[stateFilter]}
             </CardTitle>
             <div className="-mx-1 flex w-full snap-x gap-1 overflow-x-auto px-1 sm:mx-0 sm:w-auto sm:flex-wrap sm:overflow-visible sm:px-0">
-              {FILTERS.map((f) => (
+              {STATE_FILTERS.map((f) => (
                 <button
                   key={f.value}
                   type="button"
-                  onClick={() => setFilter(f.value)}
+                  onClick={() => setStateFilter(f.value)}
                   className={cn(
                     "h-7 shrink-0 snap-start rounded-md border px-2.5 text-xs transition-colors",
-                    filter === f.value
+                    stateFilter === f.value
                       ? "border-primary/40 bg-primary/15 text-primary-foreground"
                       : "border-border bg-background text-muted-foreground hover:text-foreground",
                   )}
@@ -170,6 +243,12 @@ export function Positions(): JSX.Element {
               ))}
             </div>
           </div>
+          <PortfolioFilterRow
+            portfolios={portfolios ?? []}
+            value={portfolioFilter}
+            onChange={setPortfolioFilter}
+            onManage={() => setManageOpen(true)}
+          />
         </CardHeader>
         <CardContent className="px-0">
           {isLoading ? (
@@ -193,6 +272,11 @@ export function Positions(): JSX.Element {
                   <PositionMobileCard
                     key={p.id}
                     position={p}
+                    portfolioName={
+                      p.portfolio_id !== null
+                        ? portfolioById.get(p.portfolio_id)?.name ?? null
+                        : null
+                    }
                     onOpen={() => navigate(`/positions/${p.id}`)}
                   />
                 ))}
@@ -203,6 +287,7 @@ export function Positions(): JSX.Element {
                     <TableRow>
                       <TableHead>Symbol</TableHead>
                       <TableHead>State</TableHead>
+                      <TableHead>Portfolio</TableHead>
                       <TableHead>Leg</TableHead>
                       <TableHead className="text-right">Strike</TableHead>
                       <TableHead className="text-right">Exp / DTE</TableHead>
@@ -216,6 +301,10 @@ export function Positions(): JSX.Element {
                     {filtered.map((p) => {
                       const leg = activeLeg(p);
                       const snap = p.latest_snapshot;
+                      const portfolioName =
+                        p.portfolio_id !== null
+                          ? portfolioById.get(p.portfolio_id)?.name ?? null
+                          : null;
                       return (
                         <TableRow
                           key={p.id}
@@ -227,6 +316,9 @@ export function Positions(): JSX.Element {
                           </TableCell>
                           <TableCell>
                             <StateBadge state={p.state} />
+                          </TableCell>
+                          <TableCell>
+                            <PortfolioBadge name={portfolioName} />
                           </TableCell>
                           <TableCell className="text-muted-foreground text-xs">
                             {leg
@@ -298,16 +390,100 @@ export function Positions(): JSX.Element {
         open={openDialog === "covered_call"}
         onOpenChange={(o) => !o && setOpenDialog(null)}
       />
+      <ManagePortfoliosDialog
+        open={manageOpen}
+        onOpenChange={setManageOpen}
+        portfolios={portfolios ?? []}
+        onPortfolioRemoved={(id) => {
+          if (portfolioFilter === id) setPortfolioFilter("all");
+        }}
+      />
     </div>
+  );
+}
+
+interface PortfolioFilterRowProps {
+  portfolios: PortfolioOut[];
+  value: PortfolioFilterValue;
+  onChange: (v: PortfolioFilterValue) => void;
+  onManage: () => void;
+}
+
+function PortfolioFilterRow({
+  portfolios,
+  value,
+  onChange,
+  onManage,
+}: PortfolioFilterRowProps): JSX.Element {
+  return (
+    <div className="-mx-1 flex w-full snap-x items-center gap-1 overflow-x-auto px-1 sm:mx-0 sm:overflow-visible sm:px-0">
+      <span className="text-muted-foreground shrink-0 text-[10px] font-semibold uppercase tracking-wider">
+        Portfolio
+      </span>
+      <FilterChip selected={value === "all"} onClick={() => onChange("all")}>
+        All
+      </FilterChip>
+      {portfolios.map((p) => (
+        <FilterChip
+          key={p.id}
+          selected={value === p.id}
+          onClick={() => onChange(p.id)}
+        >
+          {p.name}
+        </FilterChip>
+      ))}
+      <FilterChip selected={value === 0} onClick={() => onChange(0)}>
+        Unassigned
+      </FilterChip>
+      <button
+        type="button"
+        onClick={onManage}
+        className="text-muted-foreground hover:text-foreground ml-auto h-7 shrink-0 snap-start rounded-md border border-dashed border-border px-2.5 text-xs transition-colors"
+        title="Manage portfolios"
+      >
+        <Settings className="mr-1 inline h-3 w-3" />
+        Manage
+      </button>
+    </div>
+  );
+}
+
+function FilterChip({
+  selected,
+  onClick,
+  children,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "h-7 shrink-0 snap-start rounded-md border px-2.5 text-xs transition-colors",
+        selected
+          ? "border-primary/40 bg-primary/15 text-primary-foreground"
+          : "border-border bg-background text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
 interface PositionMobileCardProps {
   position: PositionOut;
+  portfolioName: string | null;
   onOpen: () => void;
 }
 
-function PositionMobileCard({ position, onOpen }: PositionMobileCardProps): JSX.Element {
+function PositionMobileCard({
+  position,
+  portfolioName,
+  onOpen,
+}: PositionMobileCardProps): JSX.Element {
   const leg = activeLeg(position);
   const snap = position.latest_snapshot;
   const legSummary = leg
@@ -344,6 +520,7 @@ function PositionMobileCard({ position, onOpen }: PositionMobileCardProps): JSX.
               {position.symbol}
             </span>
             <StateBadge state={position.state} />
+            <PortfolioBadge name={portfolioName} />
           </div>
           <div className="text-muted-foreground mt-0.5 truncate text-xs">
             {legSummary}
@@ -488,5 +665,133 @@ function StatCard({ label, value, tone }: StatCardProps): JSX.Element {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+interface ManagePortfoliosDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  portfolios: PortfolioOut[];
+  onPortfolioRemoved: (id: number) => void;
+}
+
+function ManagePortfoliosDialog({
+  open,
+  onOpenChange,
+  portfolios,
+  onPortfolioRemoved,
+}: ManagePortfoliosDialogProps): JSX.Element {
+  const qc = useQueryClient();
+  const [name, setName] = useState("");
+
+  const invalidate = (): void => {
+    void qc.invalidateQueries({ queryKey: ["portfolios"] });
+    void qc.invalidateQueries({ queryKey: ["positions"] });
+  };
+
+  const createMutation = useMutation({
+    mutationFn: (n: string) => createPortfolio(n),
+    onSuccess: () => {
+      setName("");
+      invalidate();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deletePortfolio(id),
+    onSuccess: (_, id) => {
+      onPortfolioRemoved(id);
+      invalidate();
+    },
+  });
+
+  useEffect(() => {
+    if (!open) {
+      setName("");
+      createMutation.reset();
+      deleteMutation.reset();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const submit = (e: React.FormEvent): void => {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    createMutation.mutate(trimmed);
+  };
+
+  const errorMessage =
+    createMutation.error?.message ?? deleteMutation.error?.message ?? null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Manage portfolios</DialogTitle>
+          <DialogDescription>
+            Portfolios are tags for grouping positions (e.g. "IRA", "Taxable").
+            Deleting one leaves its positions in place but unassigned.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={submit} className="flex gap-2">
+          <Input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="New portfolio name"
+            maxLength={64}
+          />
+          <Button type="submit" disabled={!name.trim() || createMutation.isPending}>
+            {createMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+          </Button>
+        </form>
+
+        {portfolios.length === 0 ? (
+          <p className="text-muted-foreground py-3 text-center text-sm">
+            No portfolios yet.
+          </p>
+        ) : (
+          <ul className="divide-border/60 divide-y">
+            {portfolios.map((p) => (
+              <li key={p.id} className="flex items-center justify-between py-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-foreground truncate text-sm font-medium">
+                    {p.name}
+                  </div>
+                  <div className="text-muted-foreground text-xs">
+                    {p.position_count} position{p.position_count === 1 ? "" : "s"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => deleteMutation.mutate(p.id)}
+                  disabled={deleteMutation.isPending}
+                  className="text-muted-foreground hover:text-destructive p-1 transition-colors"
+                  title={`Delete ${p.name}`}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {errorMessage && (
+          <div className="text-destructive text-xs">{errorMessage}</div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -251,8 +251,16 @@ export interface PositionOut {
   closed_at: string | null;
   notes: string | null;
   acquisition_source: AcquisitionSource | null;
+  portfolio_id: number | null;
   legs: PositionLegOut[];
   latest_snapshot: PositionSnapshotOut | null;
+}
+
+export interface PortfolioOut {
+  id: number;
+  name: string;
+  created_at: string;
+  position_count: number;
 }
 
 export interface PositionAttributionOut {
@@ -277,6 +285,7 @@ export interface OpenShortPutInput {
   opened_on: string;
   fees?: number;
   notes?: string | null;
+  portfolio_id?: number | null;
 }
 
 export interface OpenCoveredCallInput {
@@ -296,6 +305,7 @@ export interface OpenLongSharesInput {
   acquisition_source: AcquisitionSource;
   fees?: number;
   notes?: string | null;
+  portfolio_id?: number | null;
 }
 
 export interface OpenCoveredCallFreshInput extends OpenLongSharesInput {

@@ -80,6 +80,7 @@ class OpenShortPutInput:
     opened_on: DateType
     fees: float = 0.0
     notes: str | None = None
+    portfolio_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +102,7 @@ class OpenLongSharesInput:
     acquisition_source: str
     fees: float = 0.0
     notes: str | None = None
+    portfolio_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +118,7 @@ class OpenCoveredCallFreshInput:
     credit: float
     fees: float = 0.0
     notes: str | None = None
+    portfolio_id: int | None = None
 
 
 def open_short_put(session: Session, payload: OpenShortPutInput) -> Position:
@@ -133,6 +136,7 @@ def open_short_put(session: Session, payload: OpenShortPutInput) -> Position:
         state=STATE_SHORT_PUT,
         opened_at=now,
         notes=payload.notes,
+        portfolio_id=payload.portfolio_id,
     )
     session.add(position)
     session.flush()
@@ -172,6 +176,7 @@ def open_long_shares(session: Session, payload: OpenLongSharesInput) -> Position
         opened_at=now,
         notes=payload.notes,
         acquisition_source=payload.acquisition_source,
+        portfolio_id=payload.portfolio_id,
     )
     session.add(position)
     session.flush()
@@ -216,6 +221,7 @@ def open_covered_call_fresh(session: Session, payload: OpenCoveredCallFreshInput
         opened_at=now,
         notes=payload.notes,
         acquisition_source=payload.acquisition_source,
+        portfolio_id=payload.portfolio_id,
     )
     session.add(position)
     session.flush()

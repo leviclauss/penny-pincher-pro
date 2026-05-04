@@ -11,7 +11,7 @@ from db.models.market import (
     OptionsSnapshot,
     Ticker,
 )
-from db.models.positions import Position, PositionLeg, PositionSnapshot
+from db.models.positions import Portfolio, Position, PositionLeg, PositionSnapshot
 from db.models.screener import FilterConfig, ScreenerResult
 from db.models.system import BotState, JobRun
 
@@ -30,6 +30,7 @@ __all__ = [
     "MacroDaily",
     "OptionsHistorical",
     "OptionsSnapshot",
+    "Portfolio",
     "Position",
     "PositionLeg",
     "PositionSnapshot",
