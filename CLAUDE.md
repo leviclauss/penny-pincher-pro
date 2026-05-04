@@ -57,7 +57,7 @@ docs/planning/  Product spec (00-overview … 08-deployment)
 ## The schema contract
 
 The full schema is defined in `backend/db/models/` and frozen by the
-initial Alembic migration. All 17 tables exist from day one even though
+initial Alembic migration. All 19 tables exist from day one even though
 many are populated by future sessions — this is the contract between the
 two tracks. **Don't rename or change column types without notifying the
 other track.**
@@ -67,9 +67,9 @@ other track.**
 | `db.models.market` | `tickers`, `bars_daily`, `indicators_daily`, `options_snapshot`, `options_historical`, `earnings`, `macro_daily` | platform (writer), screener (reader) |
 | `db.models.screener` | `filter_configs`, `screener_results` | screener |
 | `db.models.alerts` | `alerts`, `alert_preferences` | platform |
-| `db.models.positions` | `positions`, `position_legs`, `position_snapshots` | platform |
+| `db.models.positions` | `portfolios`, `positions`, `position_legs`, `position_snapshots` | platform |
 | `db.models.backtest` | `backtest_runs`, `backtest_trades`, `backtest_equity` | screener |
-| `db.models.system` | `job_runs` | platform |
+| `db.models.system` | `job_runs`, `bot_state` | platform |
 
 Schema decisions worth knowing:
 
@@ -250,11 +250,17 @@ in the payload*.
      ``setup_triggered`` also call
      `alerts.triggers._dedup.symbol_in_morning_digest` first to enforce
      the doc 03 rule "suppress if ticker already in morning summary."
-3. **Add a Telegram template** under
-   `backend/alerts/templates/telegram/<alert_type>.md.j2`. Run every
-   payload value through the `esc` filter — MarkdownV2 will silently
-   drop the message otherwise. Snapshot-test renders via syrupy
-   (see `tests/test_telegram_render.py`).
+3. **Add a template per channel.** Each registered channel (Telegram,
+   email, ntfy) has its own template directory and renderer:
+   - `backend/alerts/templates/telegram/<alert_type>.md.j2` — every
+     payload value through the `esc` filter (MarkdownV2 silently drops
+     malformed messages).
+   - `backend/alerts/templates/email/<alert_type>.txt.j2`.
+   - `backend/alerts/templates/ntfy/<alert_type>.j2`.
+
+   A missing template for a registered channel raises at dispatch
+   time, so add all three. Snapshot-test renders via syrupy
+   (see `tests/test_telegram_render.py` and the email/ntfy equivalents).
 4. **Wire a scheduler job** in `backend/scheduler/jobs/` that:
    1. holiday-skips via `pandas_market_calendars`,
    2. dedups via the helper from step 2,
