@@ -130,7 +130,8 @@ class AlpacaClient:
         # Alpaca treats the end date as exclusive for daily bars, so add 1 day
         # to preserve the inclusive-end contract the rest of the codebase expects.
         end_exclusive = (
-            end + timedelta(days=1) if isinstance(end, date) and not isinstance(end, datetime)
+            end + timedelta(days=1)
+            if isinstance(end, date) and not isinstance(end, datetime)
             else end
         )
         request = StockBarsRequest(

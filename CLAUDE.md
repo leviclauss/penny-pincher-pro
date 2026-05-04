@@ -32,74 +32,26 @@ Two tracks:
 - ruff (lint + format), mypy strict.
 - SQLite for v1 (Postgres-ready via SQLAlchemy).
 - Frontend: Vite + React + TypeScript + Tailwind v3 + shadcn/ui-compatible
-  tokens + TanStack Query.
+  tokens + TanStack Query + react-router-dom + recharts.
 
 ## Repo layout
 
 ```
 backend/
-  api/              FastAPI app, route modules (per resource)
-                    main.py wires routers; one file per resource
-                    (tickers.py, macro.py, earnings.py, …)
-  core/             config, logging, time — cross-cutting
-  db/
-    session.py      Base, engine, sessionmaker, get_session() ctx mgr
-    models/         ORM models grouped by domain (one file per domain)
-  ingestion/
-    alpaca_client.py    Bars SDK wrapper + retry
-    options_client.py   Options SDK wrapper + retry + OCC parsing
-    finnhub_client.py   Finnhub HTTP wrapper (earnings calendar)
-    yahoo_client.py     Yahoo Finance HTTP wrapper (VIX/VIX9D index data)
-    bars.py             Daily bars fetcher (full + incremental)
-    options.py          Option chain fetcher (current snapshot)
-    earnings.py         Earnings calendar fetcher (next 90 days)
-    macro.py            VIX/SPY macro fetcher + regime derivation
-    indicators.py       Technical indicators (pure functions)
-    iv.py               ATM IV / rank / percentile + BS inversion
-    persistence.py      DataFrame ↔ DB helpers
-    pipeline.py         Orchestration + click CLI
-  screener/         Filter pipeline + scoring  (PARTNER TRACK)
-    filters/
-      base.py             Filter ABC + FilterResult dataclass (TBD)
-      technical.py | volatility.py | liquidity.py | event.py | economics.py
-    pipeline.py     Loads config, runs filters, persists results
-    registry.py     Maps filter ID strings to classes
-  scheduler/
-    app.py          BackgroundScheduler factory + JOB_REGISTRY
-    context.py      job_run() context manager
-    jobs/
-      evening.py    Post-close pipeline (bars → indicators → options → IV)
-      screener.py   Daily screener pass over the watchlist
-      positions.py  Daily snapshot + management-rule pass
-      digest.py     Morning + evening Telegram digest jobs
-      intraday.py   Intraday alert pulse (setup_triggered + iv_spike)
-  alerts/
-    dispatcher.py   Per-type fan-out + persistence (one row per fire)
-    channels/       base.py + telegram.py (HTTP-only Bot API adapter)
-    templates/      Jinja MarkdownV2 templates per alert_type + renderer
-    triggers/       Payload builders per family
-      digest.py     Morning + evening digest builders
-      intraday.py   setup_triggered + iv_spike payload builders
-      _dedup.py     Shared dedup checks (per-as_of, per-position-rule, per-symbol-per-day, morning-digest membership)
-      _freshness.py Stale-bar guard for trigger jobs
-  positions/        Wheel lifecycle + management rules
-  backtest/         Filter forward-return + full strategy simulator
-                    pricing.py / portfolio.py / simulator.py for the wheel sim
-  alembic/          Migrations
-  scripts/          One-off scripts (seed_dev.py, etc.)
-  tests/            Tests live alongside code; fixtures in tests/fixtures/
-
-frontend/
-  src/
-    api/            client.ts (typed fetch helpers) + types.ts
-    lib/            utils (cn) + format helpers
-    pages/          Dashboard, Tickers, TickerDetail, NotFound
-    components/     AppShell + ui/ (shadcn-shaped Card/Button/Table)
-                    + charts/ (PriceChart, RsiChart, IvHistoryChart)
-
-docs/planning/      Product spec (00-overview … 08-deployment)
-data/               SQLite db (gitignored)
-.github/workflows/  CI
+  api/          FastAPI routers, one file per resource; main.py wires them
+  core/         config, logging, time — cross-cutting
+  db/           session.py + models/ (one file per domain)
+  ingestion/    *_client.py wrappers + per-source fetchers + pipeline.py CLI
+  screener/     filters/, registry.py, pipeline.py  (PARTNER TRACK)
+  scheduler/    app.py (factory + JOB_REGISTRY), context.py (job_run), jobs/
+  alerts/       dispatcher.py, channels/, templates/, triggers/
+  positions/    Wheel lifecycle + management rules
+  backtest/     pricing.py / portfolio.py / simulator.py + cli.py
+  alembic/      Migrations
+  scripts/      One-off scripts (seed_dev.py, etc.)
+  tests/        Mirrors code paths; fixtures in tests/fixtures/
+frontend/src/   api/, lib/, pages/, components/ (AppShell + ui/ + charts/)
+docs/planning/  Product spec (00-overview … 08-deployment)
 ```
 
 ## The schema contract
@@ -188,38 +140,35 @@ Schema decisions worth knowing:
 
 ## Common tasks
 
+Standard targets (`install`, `test`, `lint`, `format`, `typecheck`,
+`migration m="…"`, `migrate`, `db-reset`, `ingest-full`,
+`ingest-incremental`, `run-backend`, `run-frontend`) live in the
+`Makefile` — read it for the full list.
+
+Non-obvious commands:
+
 | Task | Command |
 |---|---|
-| Install everything | `make install` |
-| Run tests | `make test` (or `cd backend && pytest -q`) |
-| Lint | `make lint` |
-| Format | `make format` |
-| Typecheck | `make typecheck` |
-| New migration | `make migration m="describe change"` |
-| Apply migrations | `make migrate` |
-| Reset DB | `make db-reset` |
 | Seed dev watchlist | `cd backend && python -m scripts.seed_dev` |
 | Refresh ticker metadata (sector, market_cap) | `cd backend && python -m ingestion.ticker_metadata` |
 | Backfill historical option chains (Polygon) | `cd backend && python -m ingestion.options_history --start YYYY-MM-DD --end YYYY-MM-DD` |
 | Backfill IV from options_historical | `cd backend && python -m ingestion.iv_backfill --start YYYY-MM-DD --end YYYY-MM-DD` |
-| Full ingestion | `make ingest-full` |
-| Daily ingestion | `make ingest-incremental` |
-| Skip options (fast bars-only) | `python -m ingestion.pipeline --incremental --skip-options` |
-| Skip everything but bars | `python -m ingestion.pipeline --incremental --skip-options --skip-earnings --skip-macro` |
-| Backend dev server (with scheduler) | `make run-backend` |
-| Backend dev server (no scheduler) | `SCHEDULER_ENABLED=false make run-backend` |
-| Trigger a job manually | `curl -X POST http://localhost:8000/api/system/jobs/evening_pipeline/run` |
-| Trigger morning digest | `curl -X POST http://localhost:8000/api/system/jobs/morning_digest/run` |
-| Trigger evening digest | `curl -X POST http://localhost:8000/api/system/jobs/evening_digest/run` |
-| Trigger one intraday tick (only registered when `SCHEDULER_INTRADAY_ENABLED=true`) | `curl -X POST http://localhost:8000/api/system/jobs/intraday_pulse/run` |
-| List recent job runs | `curl http://localhost:8000/api/system/job-runs` |
-| Frontend dev server | `make run-frontend` |
+| Bars-only ingestion (skip slow steps) | `python -m ingestion.pipeline --incremental --skip-options --skip-earnings --skip-macro` |
+| Backend without scheduler | `SCHEDULER_ENABLED=false make run-backend` |
+| Trigger any job manually | `curl -X POST http://localhost:8000/api/system/jobs/{job_id}/run` |
+| Intraday pulse (only when `SCHEDULER_INTRADAY_ENABLED=true`) | `curl -X POST http://localhost:8000/api/system/jobs/intraday_pulse/run` |
 | Update indicator snapshot | `cd backend && pytest tests/test_indicators.py --snapshot-update` |
-| Run a filter backtest | `cd backend && python -m backtest.cli --mode filter --config-id N --start YYYY-MM-DD --end YYYY-MM-DD` |
-| Run a strategy backtest | `cd backend && python -m backtest.cli --mode strategy --config-id N --start YYYY-MM-DD --end YYYY-MM-DD --starting-capital 10000` |
-| Strategy backtest with real chain prices (requires options_history backfill) | add `--use-real-chain` to the strategy command |
+| Filter backtest | `cd backend && python -m backtest.cli --mode filter --config-id N --start YYYY-MM-DD --end YYYY-MM-DD` |
+| Strategy backtest | `cd backend && python -m backtest.cli --mode strategy --config-id N --start YYYY-MM-DD --end YYYY-MM-DD --starting-capital 10000` |
+| Strategy backtest with real chain prices | append `--use-real-chain` (requires `options_history` backfill) |
 
-A typical first run from a clean clone:
+Strategy-backtest knobs (all optional, defaults in
+`backtest/cli.py`): `--max-concurrent-positions`, `--delta-target`,
+`--dte-target`, `--profit-take-pct`, `--manage-dte`, `--symbols
+AAPL,MSFT`. Filter mode takes `--forward-days` for the exit-window
+length.
+
+First run from a clean clone:
 
 ```bash
 cp .env.example .env       # add Alpaca keys
@@ -230,115 +179,37 @@ make ingest-full           # ~5 years of bars + indicators
 make run-backend
 ```
 
-## API surface (today)
+## API + Web UI
 
-Read-only, no auth. Routes are wired in `backend/api/main.py`; one
-file per resource under `backend/api/`:
+Both surfaces decay fast — read the source rather than this file:
 
-| Route | Source | Notes |
-|---|---|---|
-| `GET /api/system/health` | `api/main.py` | last bar date, bar count |
-| `GET /api/tickers` | `api/tickers.py` | watchlist + latest close, EMA200, RSI, IV ATM, next earnings |
-| `GET /api/tickers/{symbol}/chart?range=1y` | `api/tickers.py` | OHLCV joined with EMA20/50/200 + RSI |
-| `GET /api/tickers/{symbol}/iv-history?range=1y` | `api/tickers.py` | iv_atm / iv_rank / iv_percentile series |
-| `GET /api/macro/current` | `api/macro.py` | most recent macro_daily row, or null |
-| `GET /api/macro/history?range=6m` | `api/macro.py` | VIX/SPY series |
-| `GET /api/earnings/upcoming?days=7` | `api/earnings.py` | active-watchlist earnings within window |
-| `GET /api/alerts` | `api/alerts.py` | history feed; filters: `since`, `until`, `alert_type`, `symbol`, `limit`, `offset` |
-| `GET /api/alerts/types` | `api/alerts.py` | distinct alert types observed in history |
-| `POST /api/alerts/{id}/ack` | `api/alerts.py` | toggle `user_acked` (body `{"acked": bool}`) |
-| `POST /api/alerts/test` | `api/alerts.py` | local-curl helper that fires a fixture payload through the dispatcher |
-| `GET /api/backtest/runs` | `api/backtest.py` | run history (filter + strategy), newest first |
-| `POST /api/backtest/runs` | `api/backtest.py` | launcher; body `{mode:"filter"\|"strategy", config_id, start_date, end_date, ...}`. Returns 202; row starts in `status="running"` and the simulator runs in a background task |
-| `GET /api/backtest/runs/{id}` | `api/backtest.py` | poll for `status` flips (`running` → `completed`/`failed`) |
-| `GET /api/backtest/runs/{id}/trades` | `api/backtest.py` | filter rows expose `realized_pnl_pct`; strategy rows expose dollar `realized_pnl` + `leg_type`/`cycle_id`/`strike`/`expiration` |
-| `GET /api/backtest/runs/{id}/equity` | `api/backtest.py` | equity-curve time series (strategy mode only; empty list for filter runs) |
-| `DELETE /api/backtest/runs/{id}` | `api/backtest.py` | cascades to trades + equity rows |
+- **API routes:** `backend/api/main.py` wires the routers; one file per
+  resource under `backend/api/`. Read-only, no auth. Range tokens on
+  chart/IV/macro endpoints: `1m`, `3m`, `6m`, `1y`, `2y`, `5y`, `max`.
+- **Frontend pages:** `frontend/src/pages/` (Dashboard, Tickers,
+  TickerDetail, Alerts, Backtest, etc.). Fetches go through TanStack
+  Query helpers in `src/api/client.ts` with shapes in `src/api/types.ts`.
+  shadcn-shaped primitives live directly in `src/components/ui/` — no
+  shadcn CLI; design tokens are in `src/index.css`.
 
-Range tokens accepted by chart/IV/macro endpoints: `1m`, `3m`, `6m`,
-`1y`, `2y`, `5y`, `max` (subset varies by endpoint).
-
-## Web UI status
-
-Routes shipped (read-only, mobile-responsive shell with sidebar nav):
-
-- `/` — Dashboard: macro strip (VIX, VIX9D, term-structure pill,
-  SPY-vs-200-EMA light), watchlist freshness, upcoming earnings (next
-  7 days). "Recent ingestion runs" placeholder waits on `job_runs`.
-- `/tickers` — Sortable watchlist table; row click → ticker detail.
-- `/tickers/{symbol}` — Header (last close + day change), 1y price
-  chart with toggleable EMA 20/50/200 overlays and earnings reference
-  lines, RSI(14) sub-panel, IV ATM history.
-- `/alerts` — Chronological alert feed with type/symbol/date filters,
-  payload-inspection dialog, per-row ack toggle.
-- `/backtest` — Filter/Strategy mode tabs. Strategy form exposes the
-  `StrategyParams` knobs (capital, max concurrency, DTE, delta,
-  profit-take, manage-DTE, fees, slippage). Past-runs table polls
-  every 2s while any row is `running`; expanding a row shows the
-  equity curve (strategy) and a leg-type-filterable trade table.
-
-Stack additions:
-- `react-router-dom` v6 for routing.
-- `recharts` for price/RSI/IV charts (Lightweight Charts can replace
-  later if/when we want true candlesticks).
-- shadcn-shaped primitives live directly in `src/components/ui/` —
-  no shadcn CLI; design tokens are already in `src/index.css`.
-- Every fetch goes through TanStack Query; helpers in
-  `src/api/client.ts`, response shapes in `src/api/types.ts`.
-
-Out of scope until later sessions: `/configs`, `/backtest`,
-`/settings`, auth, and any read-only-→-write mutations not already
-listed above.
+Out of scope until later sessions: `/configs`, `/settings`, auth,
+write mutations beyond the alert-ack toggle.
 
 ## How to add a screener filter (partner track)
 
-The filter contract is intentionally minimal: every filter is a pure
-function that takes the day's data for one ticker plus a config dict and
-returns a pass/fail + score.
+Every filter is a pure function: takes the day's data for one ticker
+plus a config dict, returns a pass/fail + score.
 
-**1. Define the filter class** in the appropriate module under
-`backend/screener/filters/` (e.g., `technical.py`, `volatility.py`).
-The base class lives in `backend/screener/filters/base.py` (to be
-authored when the screener pipeline is built; the shape will be):
-
-```python
-from dataclasses import dataclass
-from typing import Any
-
-@dataclass
-class FilterContext:
-    symbol: str
-    as_of: date
-    bars: pd.DataFrame           # all bars up to as_of (point-in-time)
-    indicators: pd.Series        # latest row of indicators_daily
-    options_chain: pd.DataFrame | None
-    earnings: list[date]
-    ticker: TickerRow
-
-@dataclass
-class FilterResult:
-    passed: bool
-    score: float | None          # 0–1, or None if not used in scoring
-    value: float | str | None    # the value being thresholded (for UI)
-    reason: str | None           # human-readable diagnostic
-
-class Filter(Protocol):
-    id: str
-    def evaluate(self, ctx: FilterContext, params: dict[str, Any]) -> FilterResult: ...
-```
-
-**2. Register it** in `backend/screener/registry.py` so config JSON
-strings (`"id": "near_200ema"`) resolve to your class.
-
-**3. Document defaults** in [`docs/planning/02-screener-filters.md`](docs/planning/02-screener-filters.md)
-if they aren't already there.
-
-**4. Add tests** in `backend/tests/test_<filter>.py`. Use the existing
-synthetic bars fixture (`tests/fixtures/bars.py`) for deterministic
-inputs. Snapshot tests are appropriate where output is a numeric series.
-
-**5. The pipeline picks it up automatically** the next time it loads
-configs — no orchestration changes needed.
+1. **Define the filter class** in the appropriate module under
+   `backend/screener/filters/` (e.g., `technical.py`). The base class
+   and `FilterContext` / `FilterResult` shapes live in
+   `backend/screener/filters/base.py`.
+2. **Register it** in `backend/screener/registry.py` so config JSON
+   strings (`"id": "near_200ema"`) resolve to your class.
+3. **Document defaults** in [`docs/planning/02-screener-filters.md`](docs/planning/02-screener-filters.md).
+4. **Add tests** in `backend/tests/test_<filter>.py`. Use the synthetic
+   bars fixture (`tests/fixtures/bars.py`); snapshot-test numeric series.
+5. The pipeline picks it up automatically the next time it loads configs.
 
 ### Point-in-time correctness (non-negotiable for backtesting)
 
@@ -356,8 +227,8 @@ quiet-hour gating — trigger code only decides *when* to fire and *what's
 in the payload*.
 
 1. **Pick the family** — daily summary (`triggers/digest.py`),
-   position-management (handled by `positions.management.fire_triggers`),
-   intraday setup detection (future `triggers/setup.py`), etc.
+   position-management (`positions.management.fire_triggers`), intraday
+   (`triggers/intraday.py`), etc.
 2. **Build the payload as a dict** keyed exactly the way the matching
    Jinja template expects. Pick the matching dedup helper:
    - per-day events (digests, daily setup hits) → include an ``as_of``
@@ -381,7 +252,7 @@ in the payload*.
    (see `tests/test_telegram_render.py`).
 4. **Wire a scheduler job** in `backend/scheduler/jobs/` that:
    1. holiday-skips via `pandas_market_calendars`,
-   2. dedups via `already_dispatched_for_as_of`,
+   2. dedups via the helper from step 2,
    3. checks bar freshness via `alerts.triggers._freshness.check_bar_freshness`,
    4. calls the builder + `dispatcher_module.dispatch`,
    5. wraps everything in `scheduler.context.job_run()` so successes /
@@ -399,56 +270,11 @@ in the payload*.
    in `backend/db/models/__init__.py`.
 2. `make migration m="add <table>"`, review the generated migration,
    `make migrate`.
-3. Add fetcher in `backend/ingestion/<source>.py`. Use
-   `ingestion.alpaca_client.AlpacaClient` (or a peer wrapper) — never
-   call SDKs directly from the pipeline.
+3. Add fetcher in `backend/ingestion/<source>.py`. Use a `*_client.py`
+   wrapper — never call SDKs directly from the pipeline.
 4. Wire it into `ingestion.pipeline` if it should be part of the daily run.
-5. Add tests under `backend/tests/` using a `FakeAlpacaClient`-style
-   stub. Don't hit the network in tests.
-
-## How to run a backtest
-
-Two modes share the same CLI. See
-[`docs/planning/06-backtesting.md`](docs/planning/06-backtesting.md) for the
-methodology.
-
-**Filter mode (default)** replays one screener config day-by-day across an
-NYSE trading-day calendar and records the realized forward return for each
-``(symbol, day)`` pass:
-
-```bash
-cd backend && python -m backtest.cli \
-  --mode filter \
-  --config-id 1 \
-  --start 2024-01-01 --end 2025-01-01 \
-  --forward-days 30                  # trading days from entry to exit close
-  # --symbols AAPL,MSFT              # restrict universe (default = active watchlist)
-```
-
-Writes a row to ``backtest_runs`` and one row per pass to ``backtest_trades``
-(``leg_type="filter_pass"``). Filters that need an options chain mark
-themselves ineligible cleanly; unexpected per-symbol failures are logged
-(``backtest.symbol.error``) and skipped.
-
-**Strategy mode** runs the full wheel simulator with synthetic Black-Scholes
-pricing, capital management, and equity-curve writes:
-
-```bash
-cd backend && python -m backtest.cli \
-  --mode strategy \
-  --config-id 1 \
-  --start 2024-01-01 --end 2025-01-01 \
-  --starting-capital 10000 \
-  --max-concurrent-positions 5
-  # --delta-target 0.30 --dte-target 30 --profit-take-pct 0.5 --manage-dte 21
-```
-
-Writes one ``backtest_runs`` row, one ``backtest_trades`` row per simulated
-wheel leg (``csp_open`` / ``csp_close`` / ``csp_assigned`` / ``csp_expired``
-and the ``cc_*`` peers), and one ``backtest_equity`` row per trading day.
-Historical option chains aren't stored, so prices are synthetic — see
-[`backend/backtest/pricing.py`](backend/backtest/pricing.py) for the
-volatility-fallback chain (``iv_atm`` → ``hv_20`` → realized vol → 30%).
+5. Add tests under `backend/tests/` using a `Fake*Client`-style stub.
+   Don't hit the network in tests.
 
 ## CI
 
@@ -474,6 +300,8 @@ discussion:
 - Product spec: [`docs/planning/`](docs/planning/) (00-overview through
   08-deployment).
 - Schema: `backend/db/models/`.
+- Backtest methodology: [`docs/planning/06-backtesting.md`](docs/planning/06-backtesting.md).
 - Stack & deployment: [`docs/planning/08-deployment.md`](docs/planning/08-deployment.md).
 - Production deploy runbook (Lightsail + Tailscale + compose): [`docs/deploy.md`](docs/deploy.md).
 - Filter catalog: [`docs/planning/02-screener-filters.md`](docs/planning/02-screener-filters.md).
+- External data-source map (provider → tables): [`docs/ops/data-sources.md`](docs/ops/data-sources.md).
