@@ -439,6 +439,95 @@ function TradeDetailDialog({
   );
 }
 
+type GroupBy = "trades" | "symbol";
+
+interface SymbolGroup {
+  symbol: string;
+  tradeCount: number;
+  wins: number;
+  losses: number;
+  totalPnl: number;
+  firstEntry: string;
+  lastExit: string | null;
+}
+
+function buildSymbolGroups(data: BacktestTradeOut[]): SymbolGroup[] {
+  const map = new Map<string, SymbolGroup>();
+  for (const t of data) {
+    const g = map.get(t.symbol) ?? {
+      symbol: t.symbol,
+      tradeCount: 0,
+      wins: 0,
+      losses: 0,
+      totalPnl: 0,
+      firstEntry: t.entry_date,
+      lastExit: t.exit_date,
+    };
+    g.tradeCount++;
+    g.totalPnl += t.realized_pnl ?? 0;
+    if (t.outcome === "win") g.wins++;
+    if (t.outcome === "loss") g.losses++;
+    if (t.entry_date < g.firstEntry) g.firstEntry = t.entry_date;
+    if (t.exit_date != null && (g.lastExit == null || t.exit_date > g.lastExit))
+      g.lastExit = t.exit_date;
+    map.set(t.symbol, g);
+  }
+  return [...map.values()].sort((a, b) => b.totalPnl - a.totalPnl);
+}
+
+function SymbolGroupTable({ groups }: { groups: SymbolGroup[] }): JSX.Element {
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Symbol</TableHead>
+            <TableHead className="text-right">Trades</TableHead>
+            <TableHead className="text-right">W / L</TableHead>
+            <TableHead className="text-right">Win %</TableHead>
+            <TableHead className="text-right">Total P&L</TableHead>
+            <TableHead>First entry</TableHead>
+            <TableHead>Last exit</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {groups.map((g) => {
+            const scored = g.wins + g.losses;
+            const winPct = scored > 0 ? (g.wins / scored) * 100 : null;
+            return (
+              <TableRow key={g.symbol}>
+                <TableCell className="font-mono font-medium">{g.symbol}</TableCell>
+                <TableCell className="text-right font-mono">{g.tradeCount}</TableCell>
+                <TableCell className="text-right font-mono">
+                  {scored > 0 ? `${g.wins} / ${g.losses}` : "—"}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {winPct != null ? `${winPct.toFixed(0)}%` : "—"}
+                </TableCell>
+                <TableCell className="text-right">
+                  <span
+                    className={cn(
+                      "font-mono font-medium",
+                      g.totalPnl >= 0 ? "text-emerald-500" : "text-red-500",
+                    )}
+                  >
+                    {g.totalPnl >= 0 ? "+" : ""}
+                    {fmtMoney(g.totalPnl)}
+                  </span>
+                </TableCell>
+                <TableCell>{formatDate(g.firstEntry)}</TableCell>
+                <TableCell>
+                  {g.lastExit ? formatDate(g.lastExit) : "—"}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 function TradeDetail({
   runId,
   mode,
@@ -450,11 +539,17 @@ function TradeDetail({
   const [selectedTrade, setSelectedTrade] = useState<BacktestTradeOut | null>(
     null,
   );
+  const [groupBy, setGroupBy] = useState<GroupBy>("trades");
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["backtest-trades", runId],
     queryFn: () => fetchBacktestTrades(runId),
   });
+
+  const symbolGroups = useMemo(
+    () => (data ? buildSymbolGroups(data) : []),
+    [data],
+  );
 
   if (isLoading) {
     return (
@@ -481,51 +576,80 @@ function TradeDetail({
 
   const filtered = legFilter ? data.filter((t) => t.leg_type === legFilter) : data;
 
+  const GroupByToggle = (
+    <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+      {(["trades", "symbol"] as GroupBy[]).map((g) => (
+        <button
+          key={g}
+          type="button"
+          onClick={() => setGroupBy(g)}
+          className={cn(
+            "rounded-sm px-2 py-0.5 text-xs capitalize transition-colors",
+            groupBy === g
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {g === "symbol" ? "by symbol" : "trades"}
+        </button>
+      ))}
+    </div>
+  );
+
   if (mode === "filter") {
     return (
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Symbol</TableHead>
-              <TableHead>Entry</TableHead>
-              <TableHead>Exit</TableHead>
-              <TableHead className="text-right">Entry $</TableHead>
-              <TableHead className="text-right">Exit $</TableHead>
-              <TableHead className="text-right">Return</TableHead>
-              <TableHead>Outcome</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((trade) => (
-              <TableRow key={trade.id}>
-                <TableCell className="font-mono font-medium">{trade.symbol}</TableCell>
-                <TableCell>{formatDate(trade.entry_date)}</TableCell>
-                <TableCell>{formatDate(trade.exit_date)}</TableCell>
-                <TableCell className="text-right font-mono">
-                  ${fmt(trade.entry_price)}
-                </TableCell>
-                <TableCell className="text-right font-mono">
-                  {trade.exit_price != null ? `$${fmt(trade.exit_price)}` : "—"}
-                </TableCell>
-                <TableCell className="text-right">
-                  <ReturnText value={trade.realized_pnl_pct} />
-                </TableCell>
-                <TableCell>
-                  {trade.outcome ? (
-                    <Badge
-                      variant={trade.outcome === "win" ? "success" : "destructive"}
-                    >
-                      {trade.outcome}
-                    </Badge>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <div>
+        <div className="flex items-center gap-3 px-5 pt-3 pb-2">
+          {GroupByToggle}
+        </div>
+        {groupBy === "symbol" ? (
+          <SymbolGroupTable groups={symbolGroups} />
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Symbol</TableHead>
+                  <TableHead>Entry</TableHead>
+                  <TableHead>Exit</TableHead>
+                  <TableHead className="text-right">Entry $</TableHead>
+                  <TableHead className="text-right">Exit $</TableHead>
+                  <TableHead className="text-right">Return</TableHead>
+                  <TableHead>Outcome</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((trade) => (
+                  <TableRow key={trade.id}>
+                    <TableCell className="font-mono font-medium">{trade.symbol}</TableCell>
+                    <TableCell>{formatDate(trade.entry_date)}</TableCell>
+                    <TableCell>{formatDate(trade.exit_date)}</TableCell>
+                    <TableCell className="text-right font-mono">
+                      ${fmt(trade.entry_price)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {trade.exit_price != null ? `$${fmt(trade.exit_price)}` : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <ReturnText value={trade.realized_pnl_pct} />
+                    </TableCell>
+                    <TableCell>
+                      {trade.outcome ? (
+                        <Badge
+                          variant={trade.outcome === "win" ? "success" : "destructive"}
+                        >
+                          {trade.outcome}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
     );
   }
@@ -542,38 +666,44 @@ function TradeDetail({
 
   return (
     <div>
-      {presentLegTypes.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 px-5 pt-3">
-          <span className="text-muted-foreground text-xs">Leg:</span>
-          <button
-            type="button"
-            onClick={() => setLegFilter("")}
-            className={cn(
-              "rounded-md px-2 py-0.5 text-xs",
-              legFilter === ""
-                ? "bg-primary text-primary-foreground"
-                : "border-border bg-background hover:bg-muted border",
-            )}
-          >
-            all
-          </button>
-          {presentLegTypes.map((leg) => (
+      <div className="flex flex-wrap items-center gap-3 px-5 pt-3">
+        {GroupByToggle}
+        {groupBy === "trades" && presentLegTypes.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-muted-foreground text-xs">Leg:</span>
             <button
-              key={leg}
               type="button"
-              onClick={() => setLegFilter(leg)}
+              onClick={() => setLegFilter("")}
               className={cn(
-                "rounded-md px-2 py-0.5 font-mono text-xs",
-                legFilter === leg
+                "rounded-md px-2 py-0.5 text-xs",
+                legFilter === ""
                   ? "bg-primary text-primary-foreground"
                   : "border-border bg-background hover:bg-muted border",
               )}
             >
-              {leg}
+              all
             </button>
-          ))}
-        </div>
-      )}
+            {presentLegTypes.map((leg) => (
+              <button
+                key={leg}
+                type="button"
+                onClick={() => setLegFilter(leg)}
+                className={cn(
+                  "rounded-md px-2 py-0.5 font-mono text-xs",
+                  legFilter === leg
+                    ? "bg-primary text-primary-foreground"
+                    : "border-border bg-background hover:bg-muted border",
+                )}
+              >
+                {leg}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {groupBy === "symbol" ? (
+        <SymbolGroupTable groups={symbolGroups} />
+      ) : (
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -641,7 +771,8 @@ function TradeDetail({
           </TableBody>
         </Table>
       </div>
-      {selectedTrade && (
+      )}
+      {groupBy === "trades" && selectedTrade && (
         <TradeDetailDialog
           trade={selectedTrade}
           cycleTrades={cycleTradesForSelected}
