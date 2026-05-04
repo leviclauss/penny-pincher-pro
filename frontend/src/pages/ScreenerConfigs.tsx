@@ -122,8 +122,8 @@ export function ScreenerConfigs(): JSX.Element {
       </header>
 
       <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <CardHeader className="px-3 sm:px-5">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             <div className="flex items-center gap-3">
               <CardTitle>All configs</CardTitle>
               <span className="text-muted-foreground text-xs">
@@ -136,7 +136,7 @@ export function ScreenerConfigs(): JSX.Element {
             </Link>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-3 pb-3 sm:px-5 sm:pb-5">
           {configsQuery.isLoading && (
             <div className="text-muted-foreground text-sm">Loading…</div>
           )}
@@ -155,20 +155,10 @@ export function ScreenerConfigs(): JSX.Element {
             <div className="text-destructive mb-3 text-xs">{duplicateError}</div>
           )}
           {configs.length > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="text-right"># Filters</TableHead>
-                  <TableHead className="text-right">Active</TableHead>
-                  <TableHead className="text-right">Updated</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              <ul className="divide-border/50 -mx-1 divide-y md:hidden">
                 {configs.map((c) => (
-                  <ConfigRow
+                  <ConfigMobileCard
                     key={c.id}
                     config={c}
                     onToggleActive={(isActive) =>
@@ -183,8 +173,40 @@ export function ScreenerConfigs(): JSX.Element {
                     }
                   />
                 ))}
-              </TableBody>
-            </Table>
+              </ul>
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="text-right"># Filters</TableHead>
+                      <TableHead className="text-right">Active</TableHead>
+                      <TableHead className="text-right">Updated</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {configs.map((c) => (
+                      <ConfigRow
+                        key={c.id}
+                        config={c}
+                        onToggleActive={(isActive) =>
+                          toggleMutation.mutate({ id: c.id, isActive })
+                        }
+                        onDuplicate={() => duplicateMutation.mutate(c.id)}
+                        onDelete={() =>
+                          setDeleteTarget({ config: c, conflictCount: null, cascading: false })
+                        }
+                        duplicating={
+                          duplicateMutation.isPending && duplicateMutation.variables === c.id
+                        }
+                      />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -270,6 +292,64 @@ function ConfigRow({
         </div>
       </TableCell>
     </TableRow>
+  );
+}
+
+function ConfigMobileCard({
+  config,
+  onToggleActive,
+  onDuplicate,
+  onDelete,
+  duplicating,
+}: ConfigRowProps): JSX.Element {
+  return (
+    <li className={cn("px-1 py-3", !config.is_active && "opacity-60")}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-base font-semibold tracking-tight">{config.name}</div>
+          {config.description && (
+            <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
+              {config.description}
+            </div>
+          )}
+          <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 font-mono text-[11px]">
+            <span>{config.filter_ids.length} filters</span>
+            <span>{formatDate(config.updated_at)}</span>
+          </div>
+        </div>
+        <div className="shrink-0">
+          <ActiveToggle
+            checked={config.is_active}
+            onChange={(next) => onToggleActive(next)}
+          />
+        </div>
+      </div>
+      <div className="mt-2 flex items-center justify-end gap-1">
+        <Link
+          to={`/screener/configs/${config.id}`}
+          title="Edit"
+          className={buttonVariants({ variant: "ghost", size: "icon" })}
+        >
+          <Pencil className="h-4 w-4" />
+        </Link>
+        <Button
+          variant="ghost"
+          size="icon"
+          title="Duplicate"
+          onClick={onDuplicate}
+          disabled={duplicating}
+        >
+          {duplicating ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
+        </Button>
+        <Button variant="ghost" size="icon" title="Delete" onClick={onDelete}>
+          <Trash2 className="text-destructive h-4 w-4" />
+        </Button>
+      </div>
+    </li>
   );
 }
 

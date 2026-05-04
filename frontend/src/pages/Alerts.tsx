@@ -25,6 +25,91 @@ import {
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+interface AlertActionsProps {
+  alert: AlertOut;
+  onView: (alert: AlertOut) => void;
+}
+
+function AlertActions({ alert, onView }: AlertActionsProps): JSX.Element {
+  const qc = useQueryClient();
+  const ack = useMutation({
+    mutationFn: () => ackAlert(alert.id, !alert.user_acked),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["alerts"] });
+    },
+  });
+  return (
+    <div className="flex justify-end gap-1.5">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => onView(alert)}
+        title="View payload"
+      >
+        <Eye className="h-3 w-3" />
+      </Button>
+      <Button
+        size="sm"
+        variant={alert.user_acked ? "outline" : "default"}
+        onClick={() => ack.mutate()}
+        disabled={ack.isPending}
+        title={alert.user_acked ? "Mark as unacked" : "Mark as acked"}
+      >
+        <Check className="h-3 w-3" />
+        <span className="ml-1.5">{alert.user_acked ? "Unack" : "Ack"}</span>
+      </Button>
+    </div>
+  );
+}
+
+function AlertMobileCard({
+  alert,
+  onView,
+}: {
+  alert: AlertOut;
+  onView: (alert: AlertOut) => void;
+}): JSX.Element {
+  return (
+    <li
+      onClick={() => onView(alert)}
+      className={cn(
+        "active:bg-accent/40 cursor-pointer px-1 py-3 transition-colors",
+        alert.user_acked && "opacity-60",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge variant="default">{alert.alert_type}</Badge>
+            {alert.symbol && (
+              <span className="font-mono text-xs font-semibold">{alert.symbol}</span>
+            )}
+            {alert.user_acked ? (
+              <Badge variant="success">acked</Badge>
+            ) : (
+              <Badge variant="warning">new</Badge>
+            )}
+          </div>
+          <div className="text-muted-foreground mt-1 font-mono text-[11px]">
+            {formatDateTime(alert.triggered_at)}
+          </div>
+        </div>
+      </div>
+      <div className="text-muted-foreground mt-2 line-clamp-2 text-xs">
+        {summarizePayload(alert.payload)}
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className="text-muted-foreground font-mono text-[11px]">
+          {alert.channels_sent.length > 0 ? alert.channels_sent.join(", ") : "no channels"}
+        </span>
+        <div onClick={(e) => e.stopPropagation()}>
+          <AlertActions alert={alert} onView={onView} />
+        </div>
+      </div>
+    </li>
+  );
+}
+
 const PAGE_SIZE = 100;
 
 interface Filters {
@@ -125,14 +210,6 @@ function AlertRow({
   alert: AlertOut;
   onView: (alert: AlertOut) => void;
 }): JSX.Element {
-  const qc = useQueryClient();
-  const ack = useMutation({
-    mutationFn: () => ackAlert(alert.id, !alert.user_acked),
-    onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ["alerts"] });
-    },
-  });
-
   return (
     <TableRow
       className={cn("cursor-pointer", alert.user_acked && "opacity-60")}
@@ -165,26 +242,7 @@ function AlertRow({
         )}
       </TableCell>
       <TableCell onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-end gap-1.5">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onView(alert)}
-            title="View payload"
-          >
-            <Eye className="h-3 w-3" />
-          </Button>
-          <Button
-            size="sm"
-            variant={alert.user_acked ? "outline" : "default"}
-            onClick={() => ack.mutate()}
-            disabled={ack.isPending}
-            title={alert.user_acked ? "Mark as unacked" : "Mark as acked"}
-          >
-            <Check className="h-3 w-3" />
-            <span className="ml-1.5">{alert.user_acked ? "Unack" : "Ack"}</span>
-          </Button>
-        </div>
+        <AlertActions alert={alert} onView={onView} />
       </TableCell>
     </TableRow>
   );
@@ -247,11 +305,11 @@ export function Alerts(): JSX.Element {
       </header>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="px-3 sm:px-5">
           <CardTitle>Filters</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+        <CardContent className="px-3 pb-3 sm:px-5 sm:pb-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div className="space-y-1.5">
               <label className="text-muted-foreground text-xs uppercase tracking-wider">
                 Alert type
@@ -299,9 +357,11 @@ export function Alerts(): JSX.Element {
                 onChange={(e) => setDraft({ ...draft, until: e.target.value })}
               />
             </div>
-            <div className="flex items-end gap-2">
-              <Button onClick={apply}>Apply</Button>
-              <Button variant="outline" onClick={reset}>
+            <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-1">
+              <Button onClick={apply} className="flex-1 sm:flex-initial">
+                Apply
+              </Button>
+              <Button variant="outline" onClick={reset} className="flex-1 sm:flex-initial">
                 Reset
               </Button>
             </div>
@@ -310,35 +370,37 @@ export function Alerts(): JSX.Element {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4">
-          <CardTitle>
-            Recent alerts
-            {isFetching ? (
-              <span className="text-muted-foreground ml-2 text-xs font-normal">
-                refreshing…
+        <CardHeader className="px-3 sm:px-5">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <CardTitle>
+              Recent alerts
+              {isFetching ? (
+                <span className="text-muted-foreground ml-2 text-xs font-normal">
+                  refreshing…
+                </span>
+              ) : null}
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+              >
+                Prev
+              </Button>
+              <span className="text-muted-foreground font-mono text-xs">
+                page {page + 1}
               </span>
-            ) : null}
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-            >
-              Prev
-            </Button>
-            <span className="text-muted-foreground font-mono text-xs">
-              page {page + 1}
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setPage((p) => p + 1)}
-              disabled={!data || data.length < PAGE_SIZE}
-            >
-              Next
-            </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={!data || data.length < PAGE_SIZE}
+              >
+                Next
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="px-0">
@@ -355,28 +417,41 @@ export function Alerts(): JSX.Element {
               No alerts match.
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Triggered</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead>Payload</TableHead>
-                  <TableHead>Channels</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              <ul className="divide-border/50 mx-3 divide-y md:hidden">
                 {data.map((alert) => (
-                  <AlertRow
+                  <AlertMobileCard
                     key={alert.id}
                     alert={alert}
                     onView={setViewing}
                   />
                 ))}
-              </TableBody>
-            </Table>
+              </ul>
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Triggered</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Symbol</TableHead>
+                      <TableHead>Payload</TableHead>
+                      <TableHead>Channels</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.map((alert) => (
+                      <AlertRow
+                        key={alert.id}
+                        alert={alert}
+                        onView={setViewing}
+                      />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

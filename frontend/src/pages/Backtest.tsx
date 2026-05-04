@@ -483,48 +483,50 @@ function TradeDetail({
 
   if (mode === "filter") {
     return (
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Symbol</TableHead>
-            <TableHead>Entry</TableHead>
-            <TableHead>Exit</TableHead>
-            <TableHead className="text-right">Entry $</TableHead>
-            <TableHead className="text-right">Exit $</TableHead>
-            <TableHead className="text-right">Return</TableHead>
-            <TableHead>Outcome</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filtered.map((trade) => (
-            <TableRow key={trade.id}>
-              <TableCell className="font-mono font-medium">{trade.symbol}</TableCell>
-              <TableCell>{formatDate(trade.entry_date)}</TableCell>
-              <TableCell>{formatDate(trade.exit_date)}</TableCell>
-              <TableCell className="text-right font-mono">
-                ${fmt(trade.entry_price)}
-              </TableCell>
-              <TableCell className="text-right font-mono">
-                {trade.exit_price != null ? `$${fmt(trade.exit_price)}` : "—"}
-              </TableCell>
-              <TableCell className="text-right">
-                <ReturnText value={trade.realized_pnl_pct} />
-              </TableCell>
-              <TableCell>
-                {trade.outcome ? (
-                  <Badge
-                    variant={trade.outcome === "win" ? "success" : "destructive"}
-                  >
-                    {trade.outcome}
-                  </Badge>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </TableCell>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Symbol</TableHead>
+              <TableHead>Entry</TableHead>
+              <TableHead>Exit</TableHead>
+              <TableHead className="text-right">Entry $</TableHead>
+              <TableHead className="text-right">Exit $</TableHead>
+              <TableHead className="text-right">Return</TableHead>
+              <TableHead>Outcome</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {filtered.map((trade) => (
+              <TableRow key={trade.id}>
+                <TableCell className="font-mono font-medium">{trade.symbol}</TableCell>
+                <TableCell>{formatDate(trade.entry_date)}</TableCell>
+                <TableCell>{formatDate(trade.exit_date)}</TableCell>
+                <TableCell className="text-right font-mono">
+                  ${fmt(trade.entry_price)}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {trade.exit_price != null ? `$${fmt(trade.exit_price)}` : "—"}
+                </TableCell>
+                <TableCell className="text-right">
+                  <ReturnText value={trade.realized_pnl_pct} />
+                </TableCell>
+                <TableCell>
+                  {trade.outcome ? (
+                    <Badge
+                      variant={trade.outcome === "win" ? "success" : "destructive"}
+                    >
+                      {trade.outcome}
+                    </Badge>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     );
   }
 
@@ -572,71 +574,73 @@ function TradeDetail({
           ))}
         </div>
       )}
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Symbol</TableHead>
-            <TableHead>Leg</TableHead>
-            <TableHead>Entry</TableHead>
-            <TableHead>Exit</TableHead>
-            <TableHead className="text-right">Strike</TableHead>
-            <TableHead>Expires</TableHead>
-            <TableHead className="text-right">Entry $</TableHead>
-            <TableHead className="text-right">Exit $</TableHead>
-            <TableHead className="text-right">P&L</TableHead>
-            <TableHead>Outcome</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filtered.map((trade) => (
-            <TableRow
-              key={trade.id}
-              className="hover:bg-muted/50 cursor-pointer"
-              title="Click for full simulator detail"
-              onClick={() => setSelectedTrade(trade)}
-            >
-              <TableCell className="font-mono font-medium">{trade.symbol}</TableCell>
-              <TableCell className="font-mono text-xs">{trade.leg_type}</TableCell>
-              <TableCell>{formatDate(trade.entry_date)}</TableCell>
-              <TableCell>{formatDate(trade.exit_date)}</TableCell>
-              <TableCell className="text-right font-mono">
-                {trade.strike != null ? `$${fmt(trade.strike)}` : "—"}
-              </TableCell>
-              <TableCell>
-                {trade.expiration ? formatDate(trade.expiration) : "—"}
-              </TableCell>
-              <TableCell className="text-right font-mono">
-                ${fmt(trade.entry_price)}
-              </TableCell>
-              <TableCell className="text-right font-mono">
-                {trade.exit_price != null ? `$${fmt(trade.exit_price)}` : "—"}
-              </TableCell>
-              <TableCell className="text-right">
-                {trade.realized_pnl != null ? (
-                  <span
-                    className={cn(
-                      "font-mono font-medium",
-                      trade.realized_pnl >= 0 ? "text-emerald-500" : "text-red-500",
-                    )}
-                  >
-                    {trade.realized_pnl >= 0 ? "+" : ""}
-                    {fmtMoney(trade.realized_pnl)}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </TableCell>
-              <TableCell>
-                {trade.outcome ? (
-                  <span className="text-muted-foreground text-xs">{trade.outcome}</span>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </TableCell>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Symbol</TableHead>
+              <TableHead>Leg</TableHead>
+              <TableHead>Entry</TableHead>
+              <TableHead>Exit</TableHead>
+              <TableHead className="text-right">Strike</TableHead>
+              <TableHead>Expires</TableHead>
+              <TableHead className="text-right">Entry $</TableHead>
+              <TableHead className="text-right">Exit $</TableHead>
+              <TableHead className="text-right">P&L</TableHead>
+              <TableHead>Outcome</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {filtered.map((trade) => (
+              <TableRow
+                key={trade.id}
+                className="hover:bg-muted/50 cursor-pointer"
+                title="Click for full simulator detail"
+                onClick={() => setSelectedTrade(trade)}
+              >
+                <TableCell className="font-mono font-medium">{trade.symbol}</TableCell>
+                <TableCell className="font-mono text-xs">{trade.leg_type}</TableCell>
+                <TableCell>{formatDate(trade.entry_date)}</TableCell>
+                <TableCell>{formatDate(trade.exit_date)}</TableCell>
+                <TableCell className="text-right font-mono">
+                  {trade.strike != null ? `$${fmt(trade.strike)}` : "—"}
+                </TableCell>
+                <TableCell>
+                  {trade.expiration ? formatDate(trade.expiration) : "—"}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  ${fmt(trade.entry_price)}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {trade.exit_price != null ? `$${fmt(trade.exit_price)}` : "—"}
+                </TableCell>
+                <TableCell className="text-right">
+                  {trade.realized_pnl != null ? (
+                    <span
+                      className={cn(
+                        "font-mono font-medium",
+                        trade.realized_pnl >= 0 ? "text-emerald-500" : "text-red-500",
+                      )}
+                    >
+                      {trade.realized_pnl >= 0 ? "+" : ""}
+                      {fmtMoney(trade.realized_pnl)}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {trade.outcome ? (
+                    <span className="text-muted-foreground text-xs">{trade.outcome}</span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
       {selectedTrade && (
         <TradeDetailDialog
           trade={selectedTrade}
@@ -692,10 +696,8 @@ function ExpandedRunDetail({ run }: { run: BacktestRunOut }): JSX.Element {
   );
 }
 
-function RunRow({ run }: { run: BacktestRunOut }): JSX.Element {
-  const [expanded, setExpanded] = useState(false);
+function useRunRowState(run: BacktestRunOut) {
   const qc = useQueryClient();
-
   const isRunning = run.status === "running";
   const { data: liveRun } = useQuery({
     queryKey: ["backtest-run-list", run.id],
@@ -704,14 +706,12 @@ function RunRow({ run }: { run: BacktestRunOut }): JSX.Element {
     initialData: run,
   });
   const current = liveRun ?? run;
-
   const del = useMutation({
     mutationFn: () => deleteBacktestRun(current.id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["backtest-runs"] });
     },
   });
-
   const headlineReturn =
     current.mode === "strategy" ? current.total_return_pct : current.mean_return_pct;
   const headlineRight =
@@ -722,6 +722,12 @@ function RunRow({ run }: { run: BacktestRunOut }): JSX.Element {
       : current.win_rate != null
         ? `${(current.win_rate * 100).toFixed(0)}% win`
         : "—";
+  return { current, del, headlineReturn, headlineRight };
+}
+
+function RunRow({ run }: { run: BacktestRunOut }): JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+  const { current, del, headlineReturn, headlineRight } = useRunRowState(run);
 
   return (
     <>
@@ -791,6 +797,90 @@ function RunRow({ run }: { run: BacktestRunOut }): JSX.Element {
   );
 }
 
+function RunMobileCard({ run }: { run: BacktestRunOut }): JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+  const { current, del, headlineReturn, headlineRight } = useRunRowState(run);
+
+  return (
+    <li className="px-1 py-3">
+      <div
+        onClick={() => setExpanded((v) => !v)}
+        className="active:bg-accent/40 -mx-1 cursor-pointer px-1 transition-colors"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <ModeBadge mode={current.mode} />
+              <StatusBadge status={current.status} />
+            </div>
+            <div className="mt-1 truncate text-sm font-medium">
+              {current.config_name ?? `Config #${current.config_id}`}
+            </div>
+            <div className="text-muted-foreground mt-0.5 font-mono text-[11px]">
+              {formatDate(current.start_date)} – {formatDate(current.end_date)}
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <ReturnText value={headlineReturn} />
+            <div className="text-muted-foreground text-[10px] uppercase tracking-wider">
+              return
+            </div>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <div className="bg-muted/30 rounded-md px-2 py-1.5">
+            <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+              Trades
+            </div>
+            <div className="font-mono text-sm">{current.trade_count}</div>
+          </div>
+          <div className="bg-muted/30 rounded-md px-2 py-1.5">
+            <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+              Detail
+            </div>
+            <div className="font-mono text-xs">{headlineRight}</div>
+          </div>
+          <div className="bg-muted/30 rounded-md px-2 py-1.5">
+            <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+              Ran
+            </div>
+            <div className="font-mono text-xs">{formatDateTime(current.created_at)}</div>
+          </div>
+        </div>
+        <div className="mt-2 flex items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-destructive hover:text-destructive h-7 w-7 p-0"
+            title="Delete this run"
+            disabled={del.isPending}
+            onClick={(e) => {
+              e.stopPropagation();
+              del.mutate();
+            }}
+          >
+            {del.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
+          </Button>
+          {expanded ? (
+            <ChevronUp className="text-muted-foreground h-4 w-4" />
+          ) : (
+            <ChevronDown className="text-muted-foreground h-4 w-4" />
+          )}
+        </div>
+      </div>
+      {expanded && (
+        <div className="bg-muted/30 -mx-1 mt-2 rounded-md">
+          <ExpandedRunDetail run={current} />
+        </div>
+      )}
+    </li>
+  );
+}
+
 function RunsCard(): JSX.Element {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["backtest-runs"],
@@ -807,7 +897,7 @@ function RunsCard(): JSX.Element {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="px-3 sm:px-5">
         <CardTitle>Past runs</CardTitle>
       </CardHeader>
       <CardContent className="px-0">
@@ -825,26 +915,35 @@ function RunsCard(): JSX.Element {
             No runs yet. Use the form above to run your first backtest.
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Mode</TableHead>
-                <TableHead>Config</TableHead>
-                <TableHead>Period</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Trades</TableHead>
-                <TableHead className="text-right">Return</TableHead>
-                <TableHead className="text-right">Detail</TableHead>
-                <TableHead>Ran at</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          <>
+            <ul className="divide-border/50 mx-3 divide-y md:hidden">
               {data.map((run) => (
-                <RunRow key={run.id} run={run} />
+                <RunMobileCard key={run.id} run={run} />
               ))}
-            </TableBody>
-          </Table>
+            </ul>
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Mode</TableHead>
+                    <TableHead>Config</TableHead>
+                    <TableHead>Period</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Trades</TableHead>
+                    <TableHead className="text-right">Return</TableHead>
+                    <TableHead className="text-right">Detail</TableHead>
+                    <TableHead>Ran at</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.map((run) => (
+                    <RunRow key={run.id} run={run} />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
@@ -980,10 +1079,10 @@ function RunLauncherCard(): JSX.Element {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="px-3 sm:px-5">
         <CardTitle>Run a backtest</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-3 pb-3 sm:px-5 sm:pb-5">
         <div className="border-border mb-5 inline-flex rounded-md border p-0.5">
           {(["filter", "strategy"] as const).map((m) => (
             <button

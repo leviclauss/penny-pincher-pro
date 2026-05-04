@@ -89,7 +89,7 @@ function JobHistoryDialog({
             No runs recorded yet.
           </div>
         ) : (
-          <div className="max-h-[60vh] overflow-auto">
+          <div className="max-h-[60vh] overflow-auto overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -131,13 +131,7 @@ function JobHistoryDialog({
   );
 }
 
-function JobRow({
-  job,
-  onOpenHistory,
-}: {
-  job: JobInfoOut;
-  onOpenHistory: (name: string) => void;
-}): JSX.Element {
+function useTriggerJob(job: JobInfoOut) {
   const qc = useQueryClient();
   const [pendingTrigger, setPendingTrigger] = useState(false);
   const isRunning = job.last_run?.status === "running";
@@ -146,7 +140,6 @@ function JobRow({
     mutationFn: () => triggerJob(job.name),
     onMutate: () => setPendingTrigger(true),
     onSettled: () => {
-      // Brief lockout window so the polling can pick up the new running row.
       setTimeout(() => {
         setPendingTrigger(false);
         void qc.invalidateQueries({ queryKey: ["jobs"] });
@@ -157,6 +150,25 @@ function JobRow({
 
   const triggerDisabled =
     !job.enabled || pendingTrigger || isRunning || trigger.isPending;
+  const triggerTitle = !job.enabled
+    ? "Scheduler is disabled — restart with SCHEDULER_ENABLED=true"
+    : isRunning
+      ? "Already running"
+      : "Run this job now";
+  const triggerIconBusy = pendingTrigger || isRunning;
+
+  return { trigger, triggerDisabled, triggerTitle, triggerIconBusy };
+}
+
+function JobRow({
+  job,
+  onOpenHistory,
+}: {
+  job: JobInfoOut;
+  onOpenHistory: (name: string) => void;
+}): JSX.Element {
+  const { trigger, triggerDisabled, triggerTitle, triggerIconBusy } =
+    useTriggerJob(job);
 
   return (
     <TableRow
@@ -191,15 +203,9 @@ function JobRow({
           variant="outline"
           disabled={triggerDisabled}
           onClick={() => trigger.mutate()}
-          title={
-            !job.enabled
-              ? "Scheduler is disabled — restart with SCHEDULER_ENABLED=true"
-              : isRunning
-                ? "Already running"
-                : "Run this job now"
-          }
+          title={triggerTitle}
         >
-          {pendingTrigger || isRunning ? (
+          {triggerIconBusy ? (
             <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
             <Play className="h-3 w-3" />
@@ -208,6 +214,77 @@ function JobRow({
         </Button>
       </TableCell>
     </TableRow>
+  );
+}
+
+function JobMobileCard({
+  job,
+  onOpenHistory,
+}: {
+  job: JobInfoOut;
+  onOpenHistory: (name: string) => void;
+}): JSX.Element {
+  const { trigger, triggerDisabled, triggerTitle, triggerIconBusy } =
+    useTriggerJob(job);
+
+  return (
+    <li
+      onClick={() => onOpenHistory(job.name)}
+      className="active:bg-accent/40 cursor-pointer px-1 py-3 transition-colors"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold tracking-tight">{job.name}</span>
+            <StatusBadge status={job.last_run?.status ?? null} />
+          </div>
+          <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
+            {job.description}
+          </div>
+          <div className="text-muted-foreground mt-1 font-mono text-[11px]">
+            {job.schedule} · {job.cron}
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="bg-muted/30 rounded-md px-2 py-1.5">
+          <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+            Last run
+          </div>
+          <div className="font-mono text-xs">
+            {formatDateTime(job.last_run?.started_at)}
+          </div>
+        </div>
+        <div className="bg-muted/30 rounded-md px-2 py-1.5">
+          <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+            Next run · Duration
+          </div>
+          <div className="font-mono text-xs">
+            {job.enabled ? formatDateTime(job.next_run_at) : "—"} ·{" "}
+            {formatDuration(job.last_run?.duration_s)}
+          </div>
+        </div>
+      </div>
+      <div
+        className="mt-2 flex justify-end"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={triggerDisabled}
+          onClick={() => trigger.mutate()}
+          title={triggerTitle}
+        >
+          {triggerIconBusy ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Play className="h-3 w-3" />
+          )}
+          <span className="ml-1.5">Run now</span>
+        </Button>
+      </div>
+    </li>
   );
 }
 
@@ -234,7 +311,7 @@ export function Jobs(): JSX.Element {
       </header>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="px-3 sm:px-5">
           <CardTitle>Registered jobs</CardTitle>
         </CardHeader>
         <CardContent className="px-0">
@@ -251,28 +328,41 @@ export function Jobs(): JSX.Element {
               No jobs registered.
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Job</TableHead>
-                  <TableHead>Schedule</TableHead>
-                  <TableHead>Next run</TableHead>
-                  <TableHead>Last status</TableHead>
-                  <TableHead>Last started</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              <ul className="divide-border/50 mx-3 divide-y md:hidden">
                 {data.map((job) => (
-                  <JobRow
+                  <JobMobileCard
                     key={job.name}
                     job={job}
                     onOpenHistory={setHistoryJob}
                   />
                 ))}
-              </TableBody>
-            </Table>
+              </ul>
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Job</TableHead>
+                      <TableHead>Schedule</TableHead>
+                      <TableHead>Next run</TableHead>
+                      <TableHead>Last status</TableHead>
+                      <TableHead>Last started</TableHead>
+                      <TableHead>Duration</TableHead>
+                      <TableHead></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.map((job) => (
+                      <JobRow
+                        key={job.name}
+                        job={job}
+                        onOpenHistory={setHistoryJob}
+                      />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

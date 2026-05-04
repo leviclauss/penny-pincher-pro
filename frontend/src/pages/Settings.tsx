@@ -40,11 +40,10 @@ function dirty(a: AlertPreference, b: AlertPreference): boolean {
   );
 }
 
-function PreferenceRow({ pref }: { pref: AlertPreference }): JSX.Element {
+function usePreferenceState(pref: AlertPreference) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<AlertPreference>(pref);
 
-  // Reset local draft when the server payload changes (e.g. after an external save).
   useEffect(() => setDraft(pref), [pref]);
 
   const isDirty = useMemo(() => dirty(draft, pref), [draft, pref]);
@@ -72,6 +71,43 @@ function PreferenceRow({ pref }: { pref: AlertPreference }): JSX.Element {
       return { ...prev, channels: next };
     });
   };
+
+  return { draft, setDraft, isDirty, save, toggleChannel };
+}
+
+function SaveButton({
+  isDirty,
+  save,
+}: {
+  isDirty: boolean;
+  save: ReturnType<typeof usePreferenceState>["save"];
+}): JSX.Element {
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!isDirty || save.isPending}
+        onClick={() => save.mutate()}
+      >
+        {save.isPending ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <Save className="h-3 w-3" />
+        )}
+        <span className="ml-1.5">Save</span>
+      </Button>
+      {save.isError ? (
+        <div className="text-destructive mt-1 text-[11px]">
+          {save.error instanceof Error ? save.error.message : "save failed"}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function PreferenceRow({ pref }: { pref: AlertPreference }): JSX.Element {
+  const { draft, setDraft, isDirty, save, toggleChannel } = usePreferenceState(pref);
 
   return (
     <TableRow>
@@ -117,26 +153,70 @@ function PreferenceRow({ pref }: { pref: AlertPreference }): JSX.Element {
         />
       </TableCell>
       <TableCell>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!isDirty || save.isPending}
-          onClick={() => save.mutate()}
-        >
-          {save.isPending ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <Save className="h-3 w-3" />
-          )}
-          <span className="ml-1.5">Save</span>
-        </Button>
-        {save.isError ? (
-          <div className="text-destructive mt-1 text-[11px]">
-            {save.error instanceof Error ? save.error.message : "save failed"}
-          </div>
-        ) : null}
+        <SaveButton isDirty={isDirty} save={save} />
       </TableCell>
     </TableRow>
+  );
+}
+
+function PreferenceMobileCard({ pref }: { pref: AlertPreference }): JSX.Element {
+  const { draft, setDraft, isDirty, save, toggleChannel } = usePreferenceState(pref);
+
+  return (
+    <li className="space-y-3 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-sm font-medium">{draft.alert_type}</div>
+        <Checkbox
+          checked={draft.enabled}
+          onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
+          label="Enabled"
+        />
+      </div>
+      <div>
+        <div className="text-muted-foreground mb-1 text-[10px] font-medium uppercase tracking-wider">
+          Channels
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {KNOWN_CHANNELS.map((channel) => (
+            <Checkbox
+              key={channel}
+              checked={draft.channels.includes(channel)}
+              onChange={(e) => toggleChannel(channel, e.target.checked)}
+              label={channel}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <div className="text-muted-foreground mb-1 text-[10px] font-medium uppercase tracking-wider">
+            Quiet start
+          </div>
+          <Input
+            type="time"
+            value={draft.quiet_hours_start ?? ""}
+            onChange={(e) =>
+              setDraft({ ...draft, quiet_hours_start: e.target.value || null })
+            }
+          />
+        </div>
+        <div>
+          <div className="text-muted-foreground mb-1 text-[10px] font-medium uppercase tracking-wider">
+            Quiet end
+          </div>
+          <Input
+            type="time"
+            value={draft.quiet_hours_end ?? ""}
+            onChange={(e) =>
+              setDraft({ ...draft, quiet_hours_end: e.target.value || null })
+            }
+          />
+        </div>
+      </div>
+      <div className="flex justify-end">
+        <SaveButton isDirty={isDirty} save={save} />
+      </div>
+    </li>
   );
 }
 
@@ -148,7 +228,7 @@ function AlertPreferencesCard(): JSX.Element {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="px-3 sm:px-5">
         <CardTitle>Alert preferences</CardTitle>
       </CardHeader>
       <CardContent className="px-0">
@@ -165,23 +245,32 @@ function AlertPreferencesCard(): JSX.Element {
             No alert types registered.
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Alert type</TableHead>
-                <TableHead>Enabled</TableHead>
-                <TableHead>Channels</TableHead>
-                <TableHead>Quiet start</TableHead>
-                <TableHead>Quiet end</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          <>
+            <ul className="divide-border/50 mx-3 divide-y md:hidden">
               {data.map((pref) => (
-                <PreferenceRow key={pref.alert_type} pref={pref} />
+                <PreferenceMobileCard key={pref.alert_type} pref={pref} />
               ))}
-            </TableBody>
-          </Table>
+            </ul>
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Alert type</TableHead>
+                    <TableHead>Enabled</TableHead>
+                    <TableHead>Channels</TableHead>
+                    <TableHead>Quiet start</TableHead>
+                    <TableHead>Quiet end</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.map((pref) => (
+                    <PreferenceRow key={pref.alert_type} pref={pref} />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
@@ -211,7 +300,7 @@ function DataFreshnessCard(): JSX.Element {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="px-3 sm:px-5">
         <CardTitle>Data freshness</CardTitle>
       </CardHeader>
       <CardContent className="px-0">
@@ -228,7 +317,8 @@ function DataFreshnessCard(): JSX.Element {
             No jobs registered.
           </div>
         ) : (
-          <Table>
+          <div className="overflow-x-auto">
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Job</TableHead>
@@ -269,6 +359,7 @@ function DataFreshnessCard(): JSX.Element {
               ))}
             </TableBody>
           </Table>
+          </div>
         )}
         <div className="px-5 pt-4">
           <Button
@@ -335,10 +426,10 @@ function ChannelsCard(): JSX.Element {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="px-3 sm:px-5">
         <CardTitle>Channels</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-3 pb-3 sm:px-5 sm:pb-5">
         {isLoading ? (
           <div className="text-muted-foreground py-2 text-sm">Loading…</div>
         ) : isError || !data ? (

@@ -331,79 +331,169 @@ function LegsTable({ legs }: { legs: PositionLegOut[] }): JSX.Element {
     );
   }
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Type</TableHead>
-          <TableHead>Outcome</TableHead>
-          <TableHead className="text-right">Qty</TableHead>
-          <TableHead className="text-right">Strike</TableHead>
-          <TableHead className="text-right">Expiration</TableHead>
-          <TableHead className="text-right">Entry</TableHead>
-          <TableHead className="text-right">Exit</TableHead>
-          <TableHead className="text-right">Opened</TableHead>
-          <TableHead className="text-right">Closed</TableHead>
-          <TableHead className="text-right">Fees</TableHead>
-          <TableHead className="text-right">Realized P&amp;L</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+    <>
+      <ul className="divide-border/50 mx-3 divide-y md:hidden">
         {legs.map((leg) => (
-          <TableRow key={leg.id}>
-            <TableCell className="font-medium">
-              {LEG_LABELS[leg.leg_type] ?? leg.leg_type}
-            </TableCell>
-            <TableCell>
-              {leg.outcome ? (
-                <span
-                  className={cn(
-                    "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ring-1",
-                    OUTCOME_TONES[leg.outcome] ?? OUTCOME_TONES.closed,
-                  )}
-                >
-                  {leg.outcome.replace("_", " ")}
-                </span>
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              )}
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {leg.shares !== null
-                ? `${leg.shares} sh`
-                : leg.contracts !== null
-                  ? `${leg.contracts}×`
-                  : "—"}
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {formatNumber(leg.strike)}
-            </TableCell>
-            <TableCell className="text-muted-foreground text-right font-mono text-xs">
-              {formatDate(leg.expiration)}
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {formatNumber(leg.entry_price)}
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {formatNumber(leg.exit_price)}
-            </TableCell>
-            <TableCell className="text-muted-foreground text-right font-mono text-xs">
-              {formatDate(leg.entry_date)}
-            </TableCell>
-            <TableCell className="text-muted-foreground text-right font-mono text-xs">
-              {formatDate(leg.exit_date)}
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {leg.fees === 0 ? "—" : formatCurrency(leg.fees)}
-            </TableCell>
-            <TableCell
-              className={cn("text-right font-mono", pnlTone(leg.realized_pnl))}
-            >
-              {leg.realized_pnl === null ? "—" : formatCurrency(leg.realized_pnl)}
-            </TableCell>
-          </TableRow>
+          <LegMobileCard key={leg.id} leg={leg} />
         ))}
-      </TableBody>
-    </Table>
+      </ul>
+      <div className="hidden overflow-x-auto md:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Type</TableHead>
+              <TableHead>Outcome</TableHead>
+              <TableHead className="text-right">Qty</TableHead>
+              <TableHead className="text-right">Strike</TableHead>
+              <TableHead className="text-right">Expiration</TableHead>
+              <TableHead className="text-right">Entry</TableHead>
+              <TableHead className="text-right">Exit</TableHead>
+              <TableHead className="text-right">Opened</TableHead>
+              <TableHead className="text-right">Closed</TableHead>
+              <TableHead className="text-right">Fees</TableHead>
+              <TableHead className="text-right">Realized P&amp;L</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {legs.map((leg) => (
+              <TableRow key={leg.id}>
+                <TableCell className="font-medium">
+                  {LEG_LABELS[leg.leg_type] ?? leg.leg_type}
+                </TableCell>
+                <TableCell>
+                  {leg.outcome ? (
+                    <span
+                      className={cn(
+                        "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ring-1",
+                        OUTCOME_TONES[leg.outcome] ?? OUTCOME_TONES.closed,
+                      )}
+                    >
+                      {leg.outcome.replace("_", " ")}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {leg.shares !== null
+                    ? `${leg.shares} sh`
+                    : leg.contracts !== null
+                      ? `${leg.contracts}×`
+                      : "—"}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatNumber(leg.strike)}
+                </TableCell>
+                <TableCell className="text-muted-foreground text-right font-mono text-xs">
+                  {formatDate(leg.expiration)}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatNumber(leg.entry_price)}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatNumber(leg.exit_price)}
+                </TableCell>
+                <TableCell className="text-muted-foreground text-right font-mono text-xs">
+                  {formatDate(leg.entry_date)}
+                </TableCell>
+                <TableCell className="text-muted-foreground text-right font-mono text-xs">
+                  {formatDate(leg.exit_date)}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {leg.fees === 0 ? "—" : formatCurrency(leg.fees)}
+                </TableCell>
+                <TableCell
+                  className={cn("text-right font-mono", pnlTone(leg.realized_pnl))}
+                >
+                  {leg.realized_pnl === null ? "—" : formatCurrency(leg.realized_pnl)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </>
+  );
+}
+
+function LegMobileCard({ leg }: { leg: PositionLegOut }): JSX.Element {
+  const qty =
+    leg.shares !== null
+      ? `${leg.shares} sh`
+      : leg.contracts !== null
+        ? `${leg.contracts}×`
+        : "—";
+  return (
+    <li className="px-1 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold tracking-tight">
+              {LEG_LABELS[leg.leg_type] ?? leg.leg_type}
+            </span>
+            {leg.outcome ? (
+              <span
+                className={cn(
+                  "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ring-1",
+                  OUTCOME_TONES[leg.outcome] ?? OUTCOME_TONES.closed,
+                )}
+              >
+                {leg.outcome.replace("_", " ")}
+              </span>
+            ) : null}
+          </div>
+          <div className="text-muted-foreground mt-0.5 font-mono text-xs">
+            {qty}
+            {leg.strike !== null && ` · K ${formatNumber(leg.strike)}`}
+            {leg.expiration && ` · exp ${formatDate(leg.expiration)}`}
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className={cn("font-mono text-sm", pnlTone(leg.realized_pnl))}>
+            {leg.realized_pnl === null ? "—" : formatCurrency(leg.realized_pnl)}
+          </div>
+          <div className="text-muted-foreground text-[10px] uppercase tracking-wider">
+            realized
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        <div className="bg-muted/30 rounded-md px-2 py-1.5">
+          <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+            Entry
+          </div>
+          <div className="font-mono text-xs">
+            {formatNumber(leg.entry_price)}
+            {leg.entry_date && (
+              <span className="text-muted-foreground ml-1 text-[10px]">
+                {formatDate(leg.entry_date)}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="bg-muted/30 rounded-md px-2 py-1.5">
+          <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+            Exit
+          </div>
+          <div className="font-mono text-xs">
+            {formatNumber(leg.exit_price)}
+            {leg.exit_date && (
+              <span className="text-muted-foreground ml-1 text-[10px]">
+                {formatDate(leg.exit_date)}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="bg-muted/30 rounded-md px-2 py-1.5">
+          <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+            Fees
+          </div>
+          <div className="font-mono text-xs">
+            {leg.fees === 0 ? "—" : formatCurrency(leg.fees)}
+          </div>
+        </div>
+      </div>
+    </li>
   );
 }
 
