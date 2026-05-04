@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
+import { PortfolioSelect } from "@/components/positions/PortfolioSelect";
 import { cn } from "@/lib/utils";
 import { todayIso } from "@/lib/positions";
 
@@ -33,6 +34,7 @@ export function OpenLongSharesDialog({ open, onOpenChange }: Props): JSX.Element
     useState<AcquisitionSource | null>(null);
   const [fees, setFees] = useState("0");
   const [notes, setNotes] = useState("");
+  const [portfolioId, setPortfolioId] = useState<number | null>(null);
 
   const mutation = useMutation({
     mutationFn: openLongShares,
@@ -52,6 +54,7 @@ export function OpenLongSharesDialog({ open, onOpenChange }: Props): JSX.Element
       setAcquisitionSource(null);
       setFees("0");
       setNotes("");
+      setPortfolioId(null);
       mutation.reset();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,6 +72,7 @@ export function OpenLongSharesDialog({ open, onOpenChange }: Props): JSX.Element
       acquisition_source: acquisitionSource,
       fees: fees ? Number(fees) : 0,
       notes: notes.trim() || null,
+      portfolio_id: portfolioId,
     });
   };
 
@@ -166,7 +170,13 @@ export function OpenLongSharesDialog({ open, onOpenChange }: Props): JSX.Element
                 onChange={(e) => setFees(e.target.value)}
               />
             </Field>
-            <div />
+            <Field label="Portfolio" htmlFor="ols-portfolio">
+              <PortfolioSelect
+                id="ols-portfolio"
+                value={portfolioId}
+                onChange={setPortfolioId}
+              />
+            </Field>
             <div className="col-span-2 space-y-1">
               <label
                 className="text-foreground text-xs font-medium"

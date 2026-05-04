@@ -24,6 +24,7 @@ import type {
   OpenCoveredCallInput,
   OpenLongSharesInput,
   OpenShortPutInput,
+  PortfolioOut,
   PositionAttributionOut,
   PositionOut,
   PositionState,
@@ -259,14 +260,33 @@ export function fetchScreenerResults(
 export interface PositionsListParams {
   state?: PositionState | null;
   symbol?: string | null;
+  /** Pass a portfolio id to filter; pass 0 to select positions with no portfolio. */
+  portfolioId?: number | null;
 }
 
 export function fetchPositions(params: PositionsListParams = {}): Promise<PositionOut[]> {
   const qs = new URLSearchParams();
   if (params.state) qs.set("state", params.state);
   if (params.symbol) qs.set("symbol", params.symbol);
+  if (params.portfolioId !== undefined && params.portfolioId !== null) {
+    qs.set("portfolio_id", String(params.portfolioId));
+  }
   const suffix = qs.toString();
   return getJson<PositionOut[]>(`/api/positions${suffix ? `?${suffix}` : ""}`);
+}
+
+export function fetchPortfolios(): Promise<PortfolioOut[]> {
+  return getJson<PortfolioOut[]>("/api/portfolios");
+}
+
+export function createPortfolio(name: string): Promise<PortfolioOut> {
+  return mutateJson<PortfolioOut>("POST", "/api/portfolios", { name }).then(
+    (r) => r as PortfolioOut,
+  );
+}
+
+export function deletePortfolio(portfolioId: number): Promise<void> {
+  return mutateJson<void>("DELETE", `/api/portfolios/${portfolioId}`).then(() => undefined);
 }
 
 export function fetchPosition(positionId: number): Promise<PositionOut> {
@@ -301,7 +321,7 @@ export function openCoveredCallFresh(
 
 export function patchPosition(
   positionId: number,
-  patch: { notes?: string | null },
+  patch: { notes?: string | null; portfolio_id?: number | null },
 ): Promise<PositionOut> {
   return mutateJson<PositionOut>("PATCH", `/api/positions/${positionId}`, patch).then(
     (r) => r as PositionOut,

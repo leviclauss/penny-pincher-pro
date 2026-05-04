@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from core.logging import get_logger
 from db import get_session
-from db.models.positions import Position, PositionLeg, PositionSnapshot
+from db.models.positions import Portfolio, Position, PositionLeg, PositionSnapshot
 from positions import state_machine as sm
 from positions.attribution import attribute
 
@@ -62,6 +62,7 @@ class PositionOut(BaseModel):
     closed_at: datetime | None
     notes: str | None
     acquisition_source: str | None
+    portfolio_id: int | None
     legs: list[LegOut]
     latest_snapshot: SnapshotOut | None
 
@@ -78,6 +79,7 @@ class OpenShortPutBody(BaseModel):
     opened_on: date
     fees: float = Field(default=0.0, ge=0)
     notes: str | None = None
+    portfolio_id: int | None = None
 
 
 class OpenLongSharesBody(BaseModel):
@@ -88,6 +90,7 @@ class OpenLongSharesBody(BaseModel):
     acquisition_source: AcquisitionSource
     fees: float = Field(default=0.0, ge=0)
     notes: str | None = None
+    portfolio_id: int | None = None
 
 
 class OpenCoveredCallFreshBody(OpenLongSharesBody):
@@ -132,6 +135,7 @@ class CloseSharesBody(BaseModel):
 
 class PatchPositionBody(BaseModel):
     notes: str | None = None
+    portfolio_id: int | None = None
 
 
 class AttributionOut(BaseModel):
@@ -193,6 +197,7 @@ def _load(position_id: int) -> PositionOut:
             closed_at=position.closed_at,
             notes=position.notes,
             acquisition_source=position.acquisition_source,
+            portfolio_id=position.portfolio_id,
             legs=[],
             latest_snapshot=None,
         )
@@ -287,20 +292,31 @@ StateFilter = Literal["short_put", "long_shares", "covered_call", "closed"]
 
 _STATE_QUERY = Query(default=None)
 _SYMBOL_QUERY = Query(default=None)
+_PORTFOLIO_QUERY = Query(default=None)
 
 
 @router.get("", response_model=list[PositionOut])
 def list_positions(
     state: StateFilter | None = _STATE_QUERY,
     symbol: str | None = _SYMBOL_QUERY,
+    portfolio_id: int | None = _PORTFOLIO_QUERY,
 ) -> list[PositionOut]:
-    """All positions, optionally filtered by ``state`` and/or ``symbol``."""
+    """All positions, optionally filtered by ``state``, ``symbol`` or ``portfolio_id``.
+
+    ``portfolio_id=0`` selects positions with no portfolio assigned (we use 0
+    as the sentinel because ``None`` means "don't filter").
+    """
     with get_session() as session:
         stmt = select(Position).order_by(Position.opened_at.desc())
         if state is not None:
             stmt = stmt.where(Position.state == state)
         if symbol is not None:
             stmt = stmt.where(Position.symbol == symbol.upper())
+        if portfolio_id is not None:
+            if portfolio_id == 0:
+                stmt = stmt.where(Position.portfolio_id.is_(None))
+            else:
+                stmt = stmt.where(Position.portfolio_id == portfolio_id)
         positions = session.execute(stmt).scalars().all()
         ids = [p.id for p in positions]
 
@@ -327,6 +343,7 @@ def list_positions(
             closed_at=p.closed_at,
             notes=p.notes,
             acquisition_source=p.acquisition_source,
+            portfolio_id=p.portfolio_id,
             legs=[_leg_to_out(leg) for leg in legs_by_pos.get(p.id, [])],
             latest_snapshot=None,
         )
@@ -343,6 +360,7 @@ def get_position(position_id: int) -> PositionOut:
 def open_short_put_endpoint(body: OpenShortPutBody) -> PositionOut:
     try:
         with get_session() as session:
+            _require_portfolio_exists(session, body.portfolio_id)
             position = sm.open_short_put(
                 session,
                 sm.OpenShortPutInput(
@@ -354,6 +372,7 @@ def open_short_put_endpoint(body: OpenShortPutBody) -> PositionOut:
                     opened_on=body.opened_on,
                     fees=body.fees,
                     notes=body.notes,
+                    portfolio_id=body.portfolio_id,
                 ),
             )
             session.flush()
@@ -368,6 +387,7 @@ def open_short_put_endpoint(body: OpenShortPutBody) -> PositionOut:
 def open_long_shares_endpoint(body: OpenLongSharesBody) -> PositionOut:
     try:
         with get_session() as session:
+            _require_portfolio_exists(session, body.portfolio_id)
             position = sm.open_long_shares(
                 session,
                 sm.OpenLongSharesInput(
@@ -378,6 +398,7 @@ def open_long_shares_endpoint(body: OpenLongSharesBody) -> PositionOut:
                     acquisition_source=body.acquisition_source,
                     fees=body.fees,
                     notes=body.notes,
+                    portfolio_id=body.portfolio_id,
                 ),
             )
             session.flush()
@@ -397,6 +418,7 @@ def open_long_shares_endpoint(body: OpenLongSharesBody) -> PositionOut:
 def open_covered_call_fresh_endpoint(body: OpenCoveredCallFreshBody) -> PositionOut:
     try:
         with get_session() as session:
+            _require_portfolio_exists(session, body.portfolio_id)
             position = sm.open_covered_call_fresh(
                 session,
                 sm.OpenCoveredCallFreshInput(
@@ -411,6 +433,7 @@ def open_covered_call_fresh_endpoint(body: OpenCoveredCallFreshBody) -> Position
                     credit=body.credit,
                     fees=body.fees,
                     notes=body.notes,
+                    portfolio_id=body.portfolio_id,
                 ),
             )
             session.flush()
@@ -494,4 +517,14 @@ def patch_position(position_id: int, body: PatchPositionBody) -> PositionOut:
             raise HTTPException(status_code=404, detail=f"position {position_id} not found")
         if "notes" in body.model_fields_set:
             position.notes = body.notes
+        if "portfolio_id" in body.model_fields_set:
+            _require_portfolio_exists(session, body.portfolio_id)
+            position.portfolio_id = body.portfolio_id
     return _load(position_id)
+
+
+def _require_portfolio_exists(session: Session, portfolio_id: int | None) -> None:
+    if portfolio_id is None:
+        return
+    if session.get(Portfolio, portfolio_id) is None:
+        raise HTTPException(status_code=422, detail=f"portfolio {portfolio_id} not found")

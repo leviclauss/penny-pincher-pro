@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
+import { PortfolioSelect } from "@/components/positions/PortfolioSelect";
 import { todayIso } from "@/lib/positions";
 
 interface Props {
@@ -31,6 +32,7 @@ export function OpenShortPutDialog({ open, onOpenChange }: Props): JSX.Element {
   const [openedOn, setOpenedOn] = useState(todayIso());
   const [fees, setFees] = useState("0");
   const [notes, setNotes] = useState("");
+  const [portfolioId, setPortfolioId] = useState<number | null>(null);
 
   const mutation = useMutation({
     mutationFn: openShortPut,
@@ -51,6 +53,7 @@ export function OpenShortPutDialog({ open, onOpenChange }: Props): JSX.Element {
       setOpenedOn(todayIso());
       setFees("0");
       setNotes("");
+      setPortfolioId(null);
       mutation.reset();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -68,6 +71,7 @@ export function OpenShortPutDialog({ open, onOpenChange }: Props): JSX.Element {
       opened_on: openedOn,
       fees: fees ? Number(fees) : 0,
       notes: notes.trim() || null,
+      portfolio_id: portfolioId,
     });
   };
 
@@ -160,7 +164,13 @@ export function OpenShortPutDialog({ open, onOpenChange }: Props): JSX.Element {
                 onChange={(e) => setFees(e.target.value)}
               />
             </Field>
-            <div />
+            <Field label="Portfolio" htmlFor="osp-portfolio">
+              <PortfolioSelect
+                id="osp-portfolio"
+                value={portfolioId}
+                onChange={setPortfolioId}
+              />
+            </Field>
             <div className="col-span-2 space-y-1">
               <label
                 className="text-foreground text-xs font-medium"

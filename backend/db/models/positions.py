@@ -8,7 +8,18 @@ from datetime import datetime
 from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from core.time import utcnow
 from db.session import Base
+
+
+class Portfolio(Base):
+    __tablename__ = "portfolios"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
 
 
 class Position(Base):
@@ -22,6 +33,12 @@ class Position(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     acquisition_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    portfolio_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("portfolios.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
 
 class PositionLeg(Base):
