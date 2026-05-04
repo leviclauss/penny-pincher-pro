@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     alpaca_data_feed: str = "iex"
     alpaca_options_feed: str = "indicative"
 
+    # "alpaca" or "polygon". Polygon is preferred (returns OI + volume); the
+    # pipeline falls back to Alpaca when polygon is selected but no key set.
+    options_provider: str = "alpaca"
+    polygon_api_key: str = Field(default="")
+    polygon_base_url: str = "https://api.polygon.io"
+    # Developer tier is effectively unlimited; Starter is also unlimited but
+    # EOD-only. The limiter is a defensive cap, not a budget — bump only if
+    # you observe 429s.
+    polygon_rate_limit_per_min: int = 100
+
     risk_free_rate: float = 0.045
     options_max_dte: int = 60
     options_strike_pct_window: float = 0.15
