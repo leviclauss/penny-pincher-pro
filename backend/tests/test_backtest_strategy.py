@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas_market_calendars as mcal
 import pytest
@@ -30,6 +31,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from alembic import command
 from backtest.simulator import (
     LEG_CSP_ASSIGNED,
+    LEG_CSP_CLOSE,
     LEG_CSP_OPEN,
     LEG_SHARE_SOLD,
     StrategyParams,
@@ -38,6 +40,10 @@ from backtest.simulator import (
 from db.models.backtest import BacktestEquity, BacktestRun, BacktestTrade
 from db.models.market import BarDaily, IndicatorDaily, Ticker
 from db.models.screener import FilterConfig
+
+if TYPE_CHECKING:
+    from backtest.portfolio import OptionPosition, Portfolio
+    from backtest.simulator import _SimState
 
 START = date(2024, 6, 3)
 END = date(2024, 8, 30)
@@ -426,6 +432,143 @@ def test_unknown_config_id_raises(session: Session) -> None:
             end_date=END,
             params=StrategyParams(),
         )
+
+
+def _itm_put_state(*, hold_losers_to_expiry: bool) -> tuple[_SimState, Portfolio, OptionPosition]:
+    """Build a sim state with one deep-ITM short put inside the manage-DTE window.
+
+    The put's BS mid will be ~$20 vs. the $1 entry credit, so closing now
+    would be a large loss — the exact case ``hold_losers_to_expiry`` is
+    designed to skip.
+    """
+    from backtest.portfolio import MarkInputs, OptionPosition, Portfolio
+    from backtest.simulator import _apply_management_rules, _SimState
+    from screener.pipeline import ParsedConfig
+
+    portfolio = Portfolio(cash=10_000.0, starting_capital=10_000.0)
+    state = _SimState(
+        run_id=1,
+        portfolio=portfolio,
+        params=StrategyParams(
+            manage_dte=21,
+            profit_take_pct=0.50,
+            hold_losers_to_expiry=hold_losers_to_expiry,
+        ),
+        config=ParsedConfig(id=1, name="x", filters=(), weights={}, sector_max=None),
+        universe=["TEST"],
+    )
+    today = date(2024, 7, 1)
+    opt = OptionPosition(
+        cycle_id=1,
+        symbol="TEST",
+        leg_type="short_put",
+        contracts=1,
+        strike=100.0,
+        expiration=date(2024, 7, 12),  # 11 calendar days out → inside manage_dte=21
+        entry_date=date(2024, 6, 1),
+        entry_premium=1.00,
+        fees_open=0.65,
+    )
+    portfolio.add_option(opt)
+    spot_cache = {"TEST": MarkInputs(spot=80.0, sigma=0.30)}
+    _apply_management_rules(state, today, spot_cache)
+    return state, portfolio, opt
+
+
+def test_manage_dte_closes_losing_put_by_default(session: Session) -> None:
+    """Default behavior: ``manage_dte`` buys back even a deep-ITM put at a loss."""
+    state, portfolio, opt = _itm_put_state(hold_losers_to_expiry=False)
+    assert opt not in portfolio.options, "default manage_dte should close the put"
+    closes = [t for t in state.pending if t.leg_type == LEG_CSP_CLOSE]
+    assert closes, "expected a csp_close row for the loss-realizing buy-back"
+    assert closes[0].outcome == "closed_manage_dte"
+    assert closes[0].realized_pnl is not None and closes[0].realized_pnl < 0
+
+
+def test_hold_losers_to_expiry_skips_loss_close(session: Session) -> None:
+    """``hold_losers_to_expiry=True`` rides the same put to expiration instead of closing."""
+    state, portfolio, opt = _itm_put_state(hold_losers_to_expiry=True)
+    assert opt in portfolio.options, (
+        "hold_losers_to_expiry=True should leave the ITM put open for assignment"
+    )
+    closes = [t for t in state.pending if t.leg_type == LEG_CSP_CLOSE]
+    assert not closes, "no buy-back row should be written when the close would be a loss"
+
+
+def test_hold_losers_to_expiry_still_takes_profit(session: Session) -> None:
+    """The profit-take rule must still fire when the close is a credit."""
+    from backtest.portfolio import MarkInputs, OptionPosition, Portfolio
+    from backtest.simulator import _apply_management_rules, _SimState
+    from screener.pipeline import ParsedConfig
+
+    portfolio = Portfolio(cash=10_000.0, starting_capital=10_000.0)
+    state = _SimState(
+        run_id=1,
+        portfolio=portfolio,
+        params=StrategyParams(
+            manage_dte=21,
+            profit_take_pct=0.50,
+            hold_losers_to_expiry=True,
+        ),
+        config=ParsedConfig(id=1, name="x", filters=(), weights={}, sector_max=None),
+        universe=["TEST"],
+    )
+    today = date(2024, 7, 1)
+    # Far-OTM put with 30 DTE entry premium $5 — spot well above strike → BS mid
+    # collapses toward zero, so pct_profit easily clears 50%.
+    opt = OptionPosition(
+        cycle_id=1,
+        symbol="TEST",
+        leg_type="short_put",
+        contracts=1,
+        strike=80.0,
+        expiration=date(2024, 7, 25),  # 24 calendar days out → outside manage_dte
+        entry_date=date(2024, 6, 1),
+        entry_premium=5.00,
+        fees_open=0.65,
+    )
+    portfolio.add_option(opt)
+    spot_cache = {"TEST": MarkInputs(spot=120.0, sigma=0.20)}
+    _apply_management_rules(state, today, spot_cache)
+
+    assert opt not in portfolio.options
+    closes = [t for t in state.pending if t.leg_type == LEG_CSP_CLOSE]
+    assert closes and closes[0].outcome == "closed_profit_take"
+    assert closes[0].realized_pnl is not None and closes[0].realized_pnl > 0
+
+
+def test_hold_losers_to_expiry_lets_crashing_put_assign(session: Session) -> None:
+    """End-to-end: with the flag set, ITM puts in a downtrend assign at expiry."""
+    config_id = _seed_crashing_universe(session, symbol="CRA")
+
+    summary = run_strategy_backtest(
+        session,
+        config_id=config_id,
+        start_date=START,
+        end_date=END,
+        params=StrategyParams(
+            starting_capital=20_000.0,
+            max_concurrent_positions=1,
+            dte_target=30,
+            profit_take_pct=10.0,  # unreachable in a crashing universe
+            manage_dte=21,  # would normally close ITM puts at a loss
+            hold_losers_to_expiry=True,
+        ),
+    )
+
+    trades = (
+        session.execute(
+            select(BacktestTrade)
+            .where(BacktestTrade.run_id == summary.run_id)
+            .order_by(BacktestTrade.entry_date)
+        )
+        .scalars()
+        .all()
+    )
+    assigned = [t for t in trades if t.leg_type == LEG_CSP_ASSIGNED]
+    closed = [t for t in trades if t.leg_type == LEG_CSP_CLOSE and t.outcome == "closed_manage_dte"]
+    assert assigned, "ITM puts should ride to assignment, not be bought back at 21 DTE"
+    assert not closed, "no manage_dte close should fire when the buy-back would be a loss"
 
 
 def test_returns_summary_matches_persisted_state(session: Session) -> None:

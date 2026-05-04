@@ -108,7 +108,12 @@ class StrategyParams:
     ``contracts_per_position`` is fixed at one for v0 — sizing across
     multiple contracts is a future extension. ``min_dte_for_entry`` keeps
     the simulator from picking a strike with nearly zero time value (which
-    BS handles but produces brittle deltas).
+    BS handles but produces brittle deltas). ``hold_losers_to_expiry``
+    enforces "true wheel" discipline: when True, the ``manage_dte`` rule
+    only fires if the close would realize a non-negative P/L — losing
+    legs ride to expiration so ITM puts assign and ITM calls deliver
+    shares (locking in the cost-basis-floored CC strike) instead of
+    being bought back at a debit larger than the original credit.
     """
 
     starting_capital: float = 10_000.0
@@ -122,8 +127,9 @@ class StrategyParams:
     risk_free_rate: float = DEFAULT_RISK_FREE_RATE
     contracts_per_position: int = 1
     min_dte_for_entry: int = 7
+    hold_losers_to_expiry: bool = False
 
-    def to_dict(self) -> dict[str, float | int]:
+    def to_dict(self) -> dict[str, float | int | bool]:
         return {
             "starting_capital": self.starting_capital,
             "max_concurrent_positions": self.max_concurrent_positions,
@@ -136,6 +142,7 @@ class StrategyParams:
             "risk_free_rate": self.risk_free_rate,
             "contracts_per_position": self.contracts_per_position,
             "min_dte_for_entry": self.min_dte_for_entry,
+            "hold_losers_to_expiry": self.hold_losers_to_expiry,
         }
 
 
@@ -655,6 +662,14 @@ def _apply_management_rules(state: _SimState, day: date, spot_cache: dict[str, M
         if pct_profit >= state.params.profit_take_pct:
             rule = "profit_take"
         elif days_to_expiry <= state.params.manage_dte:
+            # True-wheel discipline: skip the DTE close when buying back
+            # would realize a loss. ITM puts then ride to assignment
+            # (shares acquired at strike → covered-call leg next), and
+            # ITM calls deliver shares at strike (which is floored at the
+            # share cost basis by select_call_strike, so the cycle still
+            # closes at >= breakeven on the underlying).
+            if state.params.hold_losers_to_expiry and pct_profit < 0:
+                continue
             rule = "manage_dte"
         if rule is None:
             continue

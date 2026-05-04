@@ -54,6 +54,35 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
 }
 
+TRUE_WHEEL_CONFIG: dict[str, Any] = {
+    "name": "True Wheel - 200EMA Touch",
+    "description": (
+        "Same entry signals as the conservative 200EMA touch, but intended "
+        "for backtests run with --hold-losers-to-expiry: ITM puts ride to "
+        "assignment (no buy-back at a loss) and the wheel pivots to covered "
+        "calls floored at the share cost basis."
+    ),
+    "filters": [
+        {"id": "weekly_above_200ema", "required": True},
+        {"id": "near_200ema", "params": {"max_pct": 0.03}},
+        {"id": "rsi_oversold", "params": {"max_rsi": 40}},
+        {"id": "iv_percentile_high", "params": {"min": 50}},
+        {"id": "no_earnings_in_window", "params": {"days": 45}, "required": True},
+        {"id": "min_market_cap", "params": {"min_usd": 10_000_000_000}},
+        {"id": "tier_allowed", "params": {"tiers": [1, 2]}},
+        {"id": "not_freefall", "params": {"min_5d_return": -0.10}},
+        {"id": "sector_concentration", "params": {"max": 3}},
+    ],
+    "scoring": {
+        "weights": {
+            "iv_percentile_high": 0.35,
+            "near_200ema": 0.25,
+            "rsi_oversold": 0.25,
+            "iv_rank_high": 0.15,
+        }
+    },
+}
+
 PREMIUM_HUNTER_CONFIG: dict[str, Any] = {
     "name": "Premium Hunter - High IV Rank",
     "description": (
@@ -192,6 +221,7 @@ IV_SPIKE_CONFIG: dict[str, Any] = {
 
 ALL_CONFIGS: tuple[dict[str, Any], ...] = (
     DEFAULT_CONFIG,
+    TRUE_WHEEL_CONFIG,
     PREMIUM_HUNTER_CONFIG,
     BOLLINGER_REVERSAL_CONFIG,
     BLUE_CHIP_INCOME_CONFIG,
