@@ -183,6 +183,52 @@ def test_run_writes_run_equity_and_trade_rows(session: Session) -> None:
         assert leg.expiration is not None and leg.expiration > leg.entry_date
 
 
+def test_open_legs_at_window_end_have_no_duplicate_row(session: Session) -> None:
+    """Regression: a position still open when the backtest window ends must
+    leave exactly one ``csp_open`` row, not two.
+
+    Earlier versions wrote one ``csp_open`` on entry day AND a second one in
+    an end-of-loop "flush still-open legs" block, doubling every in-flight
+    leg in the trades table.
+    """
+    config_id = _seed_bull_passing_universe(session, symbols=["AAA"])
+
+    # Five trading days is far shorter than the 30-DTE entry target, so the
+    # CSP opened on day one cannot close, expire, or assign — it must still
+    # be open when the window ends.
+    short_end = _trading_days(START, END)[4]
+
+    summary = run_strategy_backtest(
+        session,
+        config_id=config_id,
+        start_date=START,
+        end_date=short_end,
+        params=StrategyParams(starting_capital=50_000.0, max_concurrent_positions=1),
+    )
+
+    open_rows = (
+        session.execute(
+            select(BacktestTrade)
+            .where(BacktestTrade.run_id == summary.run_id)
+            .where(BacktestTrade.leg_type == LEG_CSP_OPEN)
+        )
+        .scalars()
+        .all()
+    )
+    assert open_rows, "fixture should have produced at least one open CSP"
+
+    by_cycle: dict[int, int] = {}
+    for row in open_rows:
+        assert row.cycle_id is not None
+        by_cycle[row.cycle_id] = by_cycle.get(row.cycle_id, 0) + 1
+
+    duplicates = {cid: n for cid, n in by_cycle.items() if n > 1}
+    assert not duplicates, f"each cycle should have exactly one csp_open row; got {duplicates}"
+
+    still_open = [r for r in open_rows if r.exit_date is None]
+    assert still_open, "regression scenario requires at least one position still open at window end"
+
+
 def test_capital_constraint_caps_concurrent_positions(session: Session) -> None:
     config_id = _seed_bull_passing_universe(session, symbols=["AAA", "BBB", "CCC", "DDD", "EEE"])
 
