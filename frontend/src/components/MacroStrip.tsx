@@ -48,7 +48,7 @@ function Stat({
         <Icon className="h-3.5 w-3.5" />
         {label}
       </div>
-      <div className="flex items-baseline gap-2">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="text-foreground text-2xl font-semibold tracking-tight">
           {value}
         </span>
