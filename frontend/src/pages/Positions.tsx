@@ -143,8 +143,8 @@ export function Positions(): JSX.Element {
       </div>
 
       <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <CardHeader className="px-3 sm:px-5">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             <CardTitle>
               {filter === "all"
                 ? "All positions"
@@ -152,14 +152,14 @@ export function Positions(): JSX.Element {
                   ? "Open positions"
                   : STATE_LABELS[filter]}
             </CardTitle>
-            <div className="flex flex-wrap items-center gap-1">
+            <div className="-mx-1 flex w-full snap-x gap-1 overflow-x-auto px-1 sm:mx-0 sm:w-auto sm:flex-wrap sm:overflow-visible sm:px-0">
               {FILTERS.map((f) => (
                 <button
                   key={f.value}
                   type="button"
                   onClick={() => setFilter(f.value)}
                   className={cn(
-                    "h-7 rounded-md border px-2.5 text-xs transition-colors",
+                    "h-7 shrink-0 snap-start rounded-md border px-2.5 text-xs transition-colors",
                     filter === f.value
                       ? "border-primary/40 bg-primary/15 text-primary-foreground"
                       : "border-border bg-background text-muted-foreground hover:text-foreground",
@@ -187,88 +187,101 @@ export function Positions(): JSX.Element {
                 : "No positions match this filter."}
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Leg</TableHead>
-                  <TableHead className="text-right">Strike</TableHead>
-                  <TableHead className="text-right">Exp / DTE</TableHead>
-                  <TableHead className="text-right">Mark</TableHead>
-                  <TableHead className="text-right">Unrealized P&amp;L</TableHead>
-                  <TableHead className="text-right">% Max</TableHead>
-                  <TableHead className="text-right">Opened</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((p) => {
-                  const leg = activeLeg(p);
-                  const snap = p.latest_snapshot;
-                  return (
-                    <TableRow
-                      key={p.id}
-                      onClick={() => navigate(`/positions/${p.id}`)}
-                      className="cursor-pointer"
-                    >
-                      <TableCell className="font-semibold tracking-tight">
-                        {p.symbol}
-                      </TableCell>
-                      <TableCell>
-                        <StateBadge state={p.state} />
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-xs">
-                        {leg
-                          ? leg.leg_type === "shares"
-                            ? `${leg.shares ?? 0} shares @ ${formatNumber(leg.entry_price)}`
-                            : `${leg.contracts ?? 0}× ${leg.leg_type === "short_put" ? "put" : "call"}`
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {leg && leg.strike !== null ? formatNumber(leg.strike) : "—"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-right font-mono text-xs">
-                        {leg?.expiration ? (
-                          <>
-                            {formatDate(leg.expiration)}
-                            {snap?.dte !== null && snap?.dte !== undefined && (
-                              <span className="ml-1 opacity-70">({snap.dte}d)</span>
-                            )}
-                          </>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {snap?.option_mid !== null && snap?.option_mid !== undefined
-                          ? formatNumber(snap.option_mid)
-                          : snap?.underlying_price !== null && snap?.underlying_price !== undefined
-                            ? formatNumber(snap.underlying_price)
-                            : "—"}
-                      </TableCell>
-                      <TableCell
-                        className={cn(
-                          "text-right font-mono",
-                          pnlTone(snap?.unrealized_pnl ?? null),
-                        )}
-                      >
-                        {snap?.unrealized_pnl !== null && snap?.unrealized_pnl !== undefined
-                          ? formatCurrency(snap.unrealized_pnl)
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {snap?.pct_max_profit !== null && snap?.pct_max_profit !== undefined
-                          ? `${(snap.pct_max_profit * 100).toFixed(0)}%`
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-right font-mono text-xs">
-                        {formatDate(p.opened_at)}
-                      </TableCell>
+            <>
+              <ul className="divide-border/50 mx-3 divide-y md:hidden">
+                {filtered.map((p) => (
+                  <PositionMobileCard
+                    key={p.id}
+                    position={p}
+                    onOpen={() => navigate(`/positions/${p.id}`)}
+                  />
+                ))}
+              </ul>
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Symbol</TableHead>
+                      <TableHead>State</TableHead>
+                      <TableHead>Leg</TableHead>
+                      <TableHead className="text-right">Strike</TableHead>
+                      <TableHead className="text-right">Exp / DTE</TableHead>
+                      <TableHead className="text-right">Mark</TableHead>
+                      <TableHead className="text-right">Unrealized P&amp;L</TableHead>
+                      <TableHead className="text-right">% Max</TableHead>
+                      <TableHead className="text-right">Opened</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((p) => {
+                      const leg = activeLeg(p);
+                      const snap = p.latest_snapshot;
+                      return (
+                        <TableRow
+                          key={p.id}
+                          onClick={() => navigate(`/positions/${p.id}`)}
+                          className="cursor-pointer"
+                        >
+                          <TableCell className="font-semibold tracking-tight">
+                            {p.symbol}
+                          </TableCell>
+                          <TableCell>
+                            <StateBadge state={p.state} />
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-xs">
+                            {leg
+                              ? leg.leg_type === "shares"
+                                ? `${leg.shares ?? 0} shares @ ${formatNumber(leg.entry_price)}`
+                                : `${leg.contracts ?? 0}× ${leg.leg_type === "short_put" ? "put" : "call"}`
+                              : "—"}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {leg && leg.strike !== null ? formatNumber(leg.strike) : "—"}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-right font-mono text-xs">
+                            {leg?.expiration ? (
+                              <>
+                                {formatDate(leg.expiration)}
+                                {snap?.dte !== null && snap?.dte !== undefined && (
+                                  <span className="ml-1 opacity-70">({snap.dte}d)</span>
+                                )}
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {snap?.option_mid !== null && snap?.option_mid !== undefined
+                              ? formatNumber(snap.option_mid)
+                              : snap?.underlying_price !== null && snap?.underlying_price !== undefined
+                                ? formatNumber(snap.underlying_price)
+                                : "—"}
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              "text-right font-mono",
+                              pnlTone(snap?.unrealized_pnl ?? null),
+                            )}
+                          >
+                            {snap?.unrealized_pnl !== null && snap?.unrealized_pnl !== undefined
+                              ? formatCurrency(snap.unrealized_pnl)
+                              : "—"}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {snap?.pct_max_profit !== null && snap?.pct_max_profit !== undefined
+                              ? `${(snap.pct_max_profit * 100).toFixed(0)}%`
+                              : "—"}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-right font-mono text-xs">
+                            {formatDate(p.opened_at)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -286,6 +299,92 @@ export function Positions(): JSX.Element {
         onOpenChange={(o) => !o && setOpenDialog(null)}
       />
     </div>
+  );
+}
+
+interface PositionMobileCardProps {
+  position: PositionOut;
+  onOpen: () => void;
+}
+
+function PositionMobileCard({ position, onOpen }: PositionMobileCardProps): JSX.Element {
+  const leg = activeLeg(position);
+  const snap = position.latest_snapshot;
+  const legSummary = leg
+    ? leg.leg_type === "shares"
+      ? `${leg.shares ?? 0} sh @ ${formatNumber(leg.entry_price)}`
+      : `${leg.contracts ?? 0}× ${leg.leg_type === "short_put" ? "put" : "call"} @ ${
+          leg.strike !== null ? formatNumber(leg.strike) : "—"
+        }`
+    : "—";
+  const mark =
+    snap?.option_mid !== null && snap?.option_mid !== undefined
+      ? formatNumber(snap.option_mid)
+      : snap?.underlying_price !== null && snap?.underlying_price !== undefined
+        ? formatNumber(snap.underlying_price)
+        : "—";
+  const pnlValue =
+    snap?.unrealized_pnl !== null && snap?.unrealized_pnl !== undefined
+      ? formatCurrency(snap.unrealized_pnl)
+      : "—";
+  const pctMax =
+    snap?.pct_max_profit !== null && snap?.pct_max_profit !== undefined
+      ? `${(snap.pct_max_profit * 100).toFixed(0)}%`
+      : "—";
+
+  return (
+    <li
+      onClick={onOpen}
+      className="active:bg-accent/40 cursor-pointer px-1 py-3 transition-colors"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-base font-semibold tracking-tight">
+              {position.symbol}
+            </span>
+            <StateBadge state={position.state} />
+          </div>
+          <div className="text-muted-foreground mt-0.5 truncate text-xs">
+            {legSummary}
+            {leg?.expiration && (
+              <>
+                {" · "}exp {formatDate(leg.expiration)}
+                {snap?.dte !== null && snap?.dte !== undefined && ` (${snap.dte}d)`}
+              </>
+            )}
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className={cn("font-mono text-base", pnlTone(snap?.unrealized_pnl ?? null))}>
+            {pnlValue}
+          </div>
+          <div className="text-muted-foreground text-[10px] uppercase tracking-wider">
+            unrealized
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="bg-muted/30 rounded-md px-2 py-1.5">
+          <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+            Mark
+          </div>
+          <div className="font-mono text-sm">{mark}</div>
+        </div>
+        <div className="bg-muted/30 rounded-md px-2 py-1.5">
+          <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+            % Max
+          </div>
+          <div className="font-mono text-sm">{pctMax}</div>
+        </div>
+        <div className="bg-muted/30 rounded-md px-2 py-1.5">
+          <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+            Opened
+          </div>
+          <div className="font-mono text-sm">{formatDate(position.opened_at)}</div>
+        </div>
+      </div>
+    </li>
   );
 }
 

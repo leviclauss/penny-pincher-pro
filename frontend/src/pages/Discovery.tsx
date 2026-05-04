@@ -110,8 +110,8 @@ export function Discovery(): JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
             <Telescope className="text-primary h-6 w-6" />
             Discovery
@@ -126,7 +126,7 @@ export function Discovery(): JSX.Element {
           <select
             value={configId ?? ""}
             onChange={(e) => setConfigId(e.target.value ? Number(e.target.value) : null)}
-            className="border-border bg-card text-foreground rounded-md border px-3 py-1.5 text-sm"
+            className="border-border bg-card text-foreground shrink-0 rounded-md border px-3 py-1.5 text-sm"
           >
             {configs.map((c) => (
               <option key={c.id} value={c.id}>
@@ -145,7 +145,7 @@ export function Discovery(): JSX.Element {
       )}
 
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader className="px-3 pb-2 sm:px-5">
           <CardTitle className="text-base">Premium Opportunities</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -170,8 +170,18 @@ export function Discovery(): JSX.Element {
             </div>
           )}
           {rows.length > 0 && (
-            <div className="overflow-x-auto">
-              <Table>
+            <>
+              <ul className="divide-border/50 mx-3 divide-y md:hidden">
+                {rows.map((row) => (
+                  <DiscoveryMobileCard
+                    key={row.symbol}
+                    row={row}
+                    alreadyWatchlist={watchlistSymbols.has(row.symbol)}
+                  />
+                ))}
+              </ul>
+              <div className="hidden overflow-x-auto md:block">
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Symbol</TableHead>
@@ -243,10 +253,83 @@ export function Discovery(): JSX.Element {
                   ))}
                 </TableBody>
               </Table>
-            </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+interface DiscoveryMobileCardProps {
+  row: ScreenerResultRow;
+  alreadyWatchlist: boolean;
+}
+
+function DiscoveryMobileCard({
+  row,
+  alreadyWatchlist,
+}: DiscoveryMobileCardProps): JSX.Element {
+  return (
+    <li className="px-1 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to={`/tickers/${row.symbol}`}
+              className="text-primary font-mono text-base font-semibold hover:underline"
+            >
+              {row.symbol}
+            </Link>
+            <SectorPill sector={row.sector} />
+          </div>
+          <div className="text-muted-foreground mt-0.5 font-mono text-xs">
+            {row.target_strike != null ? `K $${formatNumber(row.target_strike, 2)}` : "—"}
+            {row.target_expiration && ` · exp ${formatDate(row.target_expiration)}`}
+            {row.target_premium != null && ` · prem $${formatNumber(row.target_premium, 2)}`}
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div
+            className={cn("font-mono text-base", annualizedColor(row.annualized_return))}
+          >
+            {row.annualized_return != null ? formatPercent(row.annualized_return) : "—"}
+          </div>
+          <div className="text-muted-foreground text-[10px] uppercase tracking-wider">
+            ann. return
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="bg-muted/30 rounded-md px-2 py-1.5">
+          <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+            Score
+          </div>
+          <div className="font-mono text-sm">
+            {row.score != null ? formatNumber(row.score, 1) : "—"}
+          </div>
+        </div>
+        <div className="bg-muted/30 rounded-md px-2 py-1.5">
+          <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+            Delta
+          </div>
+          <div className="font-mono text-sm">
+            {row.target_delta != null ? formatNumber(row.target_delta, 2) : "—"}
+          </div>
+        </div>
+        <div className="bg-muted/30 rounded-md px-2 py-1.5">
+          <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+            IV %ile
+          </div>
+          <div className="font-mono text-sm">
+            {row.iv_percentile != null ? formatNumber(row.iv_percentile, 1) : "—"}
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 flex justify-end">
+        <AddButton symbol={row.symbol} alreadyWatchlist={alreadyWatchlist} />
+      </div>
+    </li>
   );
 }
