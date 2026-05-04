@@ -24,14 +24,14 @@ function VixHistoryCard(): JSX.Element {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-2 sm:items-center">
           <div>
             <CardTitle>VIX history</CardTitle>
             <p className="text-muted-foreground text-xs">
               Spot VIX vs. 9-day. Dashed lines mark 20 (elevated) and 30 (stress).
             </p>
           </div>
-          <div className="border-border/60 inline-flex overflow-hidden rounded-md border text-[11px]">
+          <div className="border-border/60 inline-flex shrink-0 overflow-hidden rounded-md border text-[11px]">
             {VIX_RANGES.map((r) => (
               <button
                 key={r}
