@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # you observe 429s.
     polygon_rate_limit_per_min: int = 100
 
+    polygon_flatfiles_access_key_id: str = Field(default="")
+    polygon_flatfiles_secret_access_key: str = Field(default="")
+    polygon_flatfiles_s3_region: str = "us-east-1"
+
     risk_free_rate: float = 0.045
     options_max_dte: int = 60
     options_strike_pct_window: float = 0.15

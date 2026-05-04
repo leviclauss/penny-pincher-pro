@@ -139,10 +139,14 @@ Schema decisions worth knowing:
   the underlying moves.
 - `options_historical` accumulates daily per-contract OHLCV (backfilled
   from Polygon via `python -m ingestion.options_history --start ... --end ...`).
-  Powers the strategy backtest's `RealChainPricer` mode (CLI flag
-  `--use-real-chain`) and the `iv_backfill` pass that seeds historical
-  `iv_atm`. Polygon Developer doesn't expose historical bid/ask at this
-  tier, so `close` is the stored mark.
+  Default source is S3 flat files (`--source flatfile`, requires
+  `POLYGON_FLATFILES_ACCESS_KEY_ID` + `SECRET`); per-contract REST
+  is available via `--source rest` (requires `POLYGON_API_KEY`). Flat
+  files need the `backup-s3` extra for boto3. Powers the strategy
+  backtest's `RealChainPricer` mode (CLI flag `--use-real-chain`) and
+  the `iv_backfill` pass that seeds historical `iv_atm`. Polygon
+  Developer doesn't expose historical bid/ask at this tier, so `close`
+  is the stored mark.
 - `earnings` is populated by Finnhub (free tier, US equities only) for
   the next ~90 days; without `FINNHUB_API_KEY` the earnings step
   silently no-ops rather than failing the whole pipeline.
@@ -200,7 +204,8 @@ Schema decisions worth knowing:
 | Reset DB | `make db-reset` |
 | Seed dev watchlist | `cd backend && python -m scripts.seed_dev` |
 | Refresh ticker metadata (sector, market_cap) | `cd backend && python -m ingestion.ticker_metadata` |
-| Backfill historical option chains (Polygon) | `cd backend && python -m ingestion.options_history --start YYYY-MM-DD --end YYYY-MM-DD` |
+| Backfill historical option chains (flat files, default) | `cd backend && python -m ingestion.options_history --start YYYY-MM-DD --end YYYY-MM-DD` |
+| Backfill historical option chains (REST fallback) | `cd backend && python -m ingestion.options_history --source rest --start YYYY-MM-DD --end YYYY-MM-DD` |
 | Backfill IV from options_historical | `cd backend && python -m ingestion.iv_backfill --start YYYY-MM-DD --end YYYY-MM-DD` |
 | Full ingestion | `make ingest-full` |
 | Daily ingestion | `make ingest-incremental` |
