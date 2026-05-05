@@ -305,6 +305,103 @@ def test_end_date_must_follow_start_date(client: TestClient) -> None:
     assert response.status_code == 422
 
 
+def test_strategy_run_trades_csv_export(client: TestClient) -> None:
+    """The CSV export carries run metadata + flattened trade rows.
+
+    Strategy-mode trades come with a populated ``meta`` (per-leg diagnostics
+    + ``pnl_breakdown``); both should surface as columns alongside the
+    standard trade fields.
+    """
+    import csv as _csv
+    import io as _io
+
+    config_id = _seed_universe()
+    response = client.post(
+        "/api/backtest/runs",
+        json={
+            "mode": "strategy",
+            "config_id": config_id,
+            "start_date": START.isoformat(),
+            "end_date": END.isoformat(),
+            "strategy_params": {"starting_capital": 25_000.0},
+        },
+    )
+    run_id = response.json()["id"]
+
+    csv_resp = client.get(f"/api/backtest/runs/{run_id}/trades.csv")
+    assert csv_resp.status_code == 200
+    assert csv_resp.headers["content-type"].startswith("text/csv")
+    disposition = csv_resp.headers.get("content-disposition", "")
+    assert f"backtest_run_{run_id}_trades.csv" in disposition
+
+    body = csv_resp.text
+    # Preamble carries run-level metadata as `# key=value` lines.
+    preamble = [line for line in body.splitlines() if line.startswith("#")]
+    assert any(f"run_id={run_id}" in line for line in preamble)
+    assert any("mode=strategy" in line for line in preamble)
+    assert any("starting_capital=25000.0" in line for line in preamble)
+    assert any(line.startswith("# param.") for line in preamble)
+
+    # Strip preamble and parse the rest as proper CSV.
+    table = "\n".join(line for line in body.splitlines() if not line.startswith("#"))
+    rows = list(_csv.DictReader(_io.StringIO(table)))
+    assert rows, "CSV should contain at least one trade row"
+
+    # Standard columns are always present.
+    for col in ("id", "run_id", "symbol", "leg_type", "entry_date", "realized_pnl"):
+        assert col in rows[0], f"missing column: {col}"
+
+    # Strategy-mode meta fields surface as flattened columns.
+    sample_keys = set(rows[0].keys())
+    assert any(k.startswith("meta.") for k in sample_keys), sample_keys
+    # pnl_breakdown is flattened to pnl.* columns on closed legs.
+    closed = [r for r in rows if r["exit_date"]]
+    assert closed, "expected at least one closed leg in this fixture"
+    assert any(k.startswith("pnl.") for k in closed[0])
+
+    # run_id column matches the run.
+    assert all(r["run_id"] == str(run_id) for r in rows)
+
+
+def test_filter_run_trades_csv_export(client: TestClient) -> None:
+    """Filter-mode CSV: realized_pnl_pct populated, realized_pnl blank."""
+    import csv as _csv
+    import io as _io
+
+    config_id = _seed_universe()
+    response = client.post(
+        "/api/backtest/runs",
+        json={
+            "mode": "filter",
+            "config_id": config_id,
+            "start_date": START.isoformat(),
+            "end_date": END.isoformat(),
+            "forward_days": 5,
+        },
+    )
+    run_id = response.json()["id"]
+
+    csv_resp = client.get(f"/api/backtest/runs/{run_id}/trades.csv")
+    assert csv_resp.status_code == 200
+
+    body = csv_resp.text
+    preamble = [line for line in body.splitlines() if line.startswith("#")]
+    assert any("mode=filter" in line for line in preamble)
+    assert any(line.startswith("# win_rate=") for line in preamble)
+
+    table = "\n".join(line for line in body.splitlines() if not line.startswith("#"))
+    rows = list(_csv.DictReader(_io.StringIO(table)))
+    assert rows
+    # Filter mode: realized_pnl_pct is populated, realized_pnl is empty.
+    assert rows[0]["realized_pnl"] == ""
+    assert rows[0]["realized_pnl_pct"] != ""
+
+
+def test_trades_csv_unknown_run_returns_404(client: TestClient) -> None:
+    response = client.get("/api/backtest/runs/99999/trades.csv")
+    assert response.status_code == 404
+
+
 def test_list_runs_orders_newest_first(client: TestClient) -> None:
     config_id = _seed_universe()
     for _ in range(2):

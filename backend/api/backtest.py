@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 import statistics
 from collections.abc import Sequence
 from datetime import date as DateType
@@ -244,6 +247,40 @@ def list_trades(run_id: int) -> list[BacktestTradeOut]:
         return [_trade_out(t, run.mode) for t in trades]
 
 
+@router.get("/runs/{run_id}/trades.csv")
+def export_trades_csv(run_id: int) -> Response:
+    """Export this run's trades as CSV with run-level metadata in a header preamble.
+
+    Designed for offline review (paste-into-Claude / spreadsheet sanity checks):
+    the run config, params, and summary metrics travel with the trade rows so
+    the CSV is self-contained. Meta keys are flattened (``pnl.<sub>`` for the
+    P&L breakdown, ``meta.<key>`` for per-leg diagnostics) and ``lots`` is
+    JSON-encoded since it's a variable-length list of dicts.
+    """
+    with get_session() as session:
+        run = session.get(BacktestRun, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+        run_out = _build_run_out(session, run)
+        trades = (
+            session.execute(
+                select(BacktestTrade)
+                .where(BacktestTrade.run_id == run_id)
+                .order_by(BacktestTrade.entry_date, BacktestTrade.symbol, BacktestTrade.id)
+            )
+            .scalars()
+            .all()
+        )
+
+    body = _render_trades_csv(run_out, trades)
+    filename = f"backtest_run_{run_id}_trades.csv"
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/runs/{run_id}/equity", response_model=list[BacktestEquityPoint])
 def list_equity(run_id: int) -> list[BacktestEquityPoint]:
     with get_session() as session:
@@ -472,6 +509,158 @@ def _trade_out(t: BacktestTrade, mode: str) -> BacktestTradeOut:
         fees=t.fees,
         meta=t.meta,
     )
+
+
+# Standard trade columns emitted in every CSV, in this order. Meta-derived
+# columns are appended after these based on what's actually present.
+_CSV_TRADE_COLUMNS: tuple[str, ...] = (
+    "id",
+    "run_id",
+    "cycle_id",
+    "symbol",
+    "leg_type",
+    "entry_date",
+    "exit_date",
+    "expiration",
+    "strike",
+    "entry_price",
+    "exit_price",
+    "outcome",
+    "realized_pnl",
+    "realized_pnl_pct",
+    "fees",
+)
+
+
+def _flatten_meta(meta: dict[str, Any] | None) -> dict[str, Any]:
+    """Flatten a trade's ``meta`` dict into CSV-friendly scalar columns.
+
+    - ``pnl_breakdown.<k>`` → ``pnl.<k>`` (one column per sub-key).
+    - ``lots`` → ``lots_count`` and ``lots_total_shares`` summary columns,
+      plus a JSON-encoded ``lots_json`` for full fidelity.
+    - Scalar keys → ``meta.<key>``.
+    - Any remaining nested dict/list → JSON-encoded under ``meta.<key>``.
+    """
+    if not meta:
+        return {}
+    out: dict[str, Any] = {}
+    for key, value in meta.items():
+        if key == "pnl_breakdown" and isinstance(value, dict):
+            for sub_key, sub_value in value.items():
+                out[f"pnl.{sub_key}"] = sub_value
+        elif key == "lots" and isinstance(value, list):
+            out["lots_count"] = len(value)
+            total_shares = 0
+            for lot in value:
+                if isinstance(lot, dict):
+                    shares = lot.get("shares")
+                    if isinstance(shares, (int, float)):
+                        total_shares += int(shares)
+            out["lots_total_shares"] = total_shares
+            out["lots_json"] = json.dumps(value, default=str, separators=(",", ":"))
+        elif isinstance(value, (str, int, float, bool)) or value is None:
+            out[f"meta.{key}"] = value
+        else:
+            out[f"meta.{key}"] = json.dumps(value, default=str, separators=(",", ":"))
+    return out
+
+
+def _render_trades_csv(run: BacktestRunOut, trades: Sequence[BacktestTrade]) -> str:
+    """Serialise the run's trades as CSV with a metadata preamble.
+
+    The preamble is a block of ``# key=value`` lines (CSV readers ignore
+    them when stripped, and humans / LLMs can scan them at a glance) followed
+    by a blank line and the actual table.
+    """
+    flattened: list[dict[str, Any]] = []
+    extra_keys: list[str] = []
+    seen: set[str] = set()
+    for trade in trades:
+        flat = _flatten_meta(trade.meta)
+        flattened.append(flat)
+        for key in flat:
+            if key not in seen:
+                seen.add(key)
+                extra_keys.append(key)
+
+    columns = list(_CSV_TRADE_COLUMNS) + extra_keys
+
+    buf = io.StringIO()
+    for line in _csv_preamble_lines(run, trade_count=len(trades)):
+        buf.write(f"# {line}\n")
+    buf.write("#\n")
+
+    writer = csv.DictWriter(buf, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    for trade, flat in zip(trades, flattened, strict=True):
+        realized_pnl: float | None = trade.realized_pnl
+        realized_pnl_pct: float | None = None
+        # Filter mode stores % return in realized_pnl; surface both columns
+        # explicitly so the CSV is unambiguous regardless of mode.
+        if run.mode == MODE_FILTER and trade.realized_pnl is not None:
+            realized_pnl_pct = trade.realized_pnl
+            realized_pnl = None
+
+        row: dict[str, Any] = {
+            "id": trade.id,
+            "run_id": run.id,
+            "cycle_id": trade.cycle_id,
+            "symbol": trade.symbol,
+            "leg_type": trade.leg_type,
+            "entry_date": trade.entry_date.isoformat() if trade.entry_date else "",
+            "exit_date": trade.exit_date.isoformat() if trade.exit_date else "",
+            "expiration": trade.expiration.isoformat() if trade.expiration else "",
+            "strike": trade.strike,
+            "entry_price": trade.entry_price,
+            "exit_price": trade.exit_price,
+            "outcome": trade.outcome,
+            "realized_pnl": realized_pnl,
+            "realized_pnl_pct": realized_pnl_pct,
+            "fees": trade.fees,
+        }
+        for key, value in flat.items():
+            row[key] = value
+        writer.writerow({k: ("" if v is None else v) for k, v in row.items()})
+
+    return buf.getvalue()
+
+
+def _csv_preamble_lines(run: BacktestRunOut, *, trade_count: int) -> list[str]:
+    lines = [
+        "Penny Pincher Pro — backtest trade export",
+        f"run_id={run.id}",
+        f"mode={run.mode}",
+        f"status={run.status}",
+        f"config_id={run.config_id if run.config_id is not None else ''}",
+        f"config_name={run.config_name or ''}",
+        f"start_date={run.start_date.isoformat()}",
+        f"end_date={run.end_date.isoformat()}",
+        f"starting_capital={run.starting_capital}",
+        f"created_at={run.created_at.isoformat()}",
+        f"trade_count={trade_count}",
+    ]
+    if run.error_message:
+        # Keep the error on a single line; newlines would break the preamble.
+        lines.append(f"error_message={run.error_message.replace(chr(10), ' ')}")
+    if run.mode == MODE_STRATEGY:
+        lines.append(f"final_equity={run.final_equity if run.final_equity is not None else ''}")
+        lines.append(
+            f"total_return_pct={run.total_return_pct if run.total_return_pct is not None else ''}"
+        )
+        lines.append(
+            f"cycles_completed={run.cycles_completed if run.cycles_completed is not None else ''}"
+        )
+    else:
+        lines.append(f"win_rate={run.win_rate if run.win_rate is not None else ''}")
+        lines.append(
+            f"mean_return_pct={run.mean_return_pct if run.mean_return_pct is not None else ''}"
+        )
+        median = run.median_return_pct if run.median_return_pct is not None else ""
+        lines.append(f"median_return_pct={median}")
+    if run.params_json:
+        for key in sorted(run.params_json):
+            lines.append(f"param.{key}={run.params_json[key]}")
+    return lines
 
 
 __all__ = ["MODE_FILTER", "MODE_STRATEGY", "STATUS_FAILED", "router"]
