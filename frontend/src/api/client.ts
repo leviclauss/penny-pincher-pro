@@ -419,3 +419,7 @@ export function deleteBacktestRun(runId: number): Promise<void> {
     () => undefined,
   );
 }
+
+export function backtestTradesCsvUrl(runId: number): string {
+  return `/api/backtest/runs/${runId}/trades.csv`;
+}

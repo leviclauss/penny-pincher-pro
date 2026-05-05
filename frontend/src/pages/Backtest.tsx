@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronUp,
+  Download,
   FlaskConical,
   Loader2,
   Play,
@@ -10,6 +11,7 @@ import {
 } from "lucide-react";
 import {
   ApiError,
+  backtestTradesCsvUrl,
   deleteBacktestRun,
   fetchBacktestEquity,
   fetchBacktestRun,
@@ -818,7 +820,20 @@ function ExpandedRunDetail({ run }: { run: BacktestRunOut }): JSX.Element {
         </div>
       ) : (
         <div>
-          <h3 className="mb-2 text-sm font-semibold">Trades</h3>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Trades</h3>
+            {current.status === "completed" && current.trade_count > 0 && (
+              <a
+                href={backtestTradesCsvUrl(current.id)}
+                download
+                title="Download trades + run metadata as CSV (paste into Claude or a spreadsheet to audit)"
+                className="text-muted-foreground hover:text-foreground border-border bg-background hover:bg-muted inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export CSV
+              </a>
+            )}
+          </div>
           <div className="border-border bg-background rounded-md border">
             <TradeDetail runId={current.id} mode={current.mode} />
           </div>
@@ -893,6 +908,17 @@ function RunRow({ run }: { run: BacktestRunOut }): JSX.Element {
         </TableCell>
         <TableCell>
           <div className="flex items-center justify-end gap-2">
+            {current.status === "completed" && current.trade_count > 0 && (
+              <a
+                href={backtestTradesCsvUrl(current.id)}
+                download
+                onClick={(e) => e.stopPropagation()}
+                title="Download trades + run metadata as CSV"
+                className="text-muted-foreground hover:text-foreground inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-muted"
+              >
+                <Download className="h-3.5 w-3.5" />
+              </a>
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -980,6 +1006,17 @@ function RunMobileCard({ run }: { run: BacktestRunOut }): JSX.Element {
           </div>
         </div>
         <div className="mt-2 flex items-center justify-end gap-2">
+          {current.status === "completed" && current.trade_count > 0 && (
+            <a
+              href={backtestTradesCsvUrl(current.id)}
+              download
+              onClick={(e) => e.stopPropagation()}
+              title="Download trades + run metadata as CSV"
+              className="text-muted-foreground hover:text-foreground inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-muted"
+            >
+              <Download className="h-3.5 w-3.5" />
+            </a>
+          )}
           <Button
             size="sm"
             variant="ghost"
