@@ -56,6 +56,7 @@ class StrategyParamsIn(BaseModel):
     manage_dte: int = Field(default=21, ge=0, le=60)
     fee_per_contract: float = Field(default=0.65, ge=0)
     slippage_per_share: float = Field(default=0.02, ge=0)
+    hold_losers_to_expiry: bool = Field(default=False)
 
 
 class BacktestRunIn(BaseModel):
@@ -199,6 +200,7 @@ def create_run(payload: BacktestRunIn, background_tasks: BackgroundTasks) -> Bac
                 manage_dte=sp.manage_dte,
                 fee_per_contract=sp.fee_per_contract,
                 slippage_per_share=sp.slippage_per_share,
+                hold_losers_to_expiry=sp.hold_losers_to_expiry,
             ),
         )
     else:
@@ -261,18 +263,15 @@ def list_equity(run_id: int) -> list[BacktestEquityPoint]:
             return []
 
         # Build a {date: spy_close} map from macro_daily for the run's date range.
-        macro_rows = (
-            session.execute(
-                select(MacroDaily.date, MacroDaily.spy_close)
-                .where(
-                    MacroDaily.date >= rows[0].date,
-                    MacroDaily.date <= rows[-1].date,
-                    MacroDaily.spy_close.is_not(None),
-                )
-                .order_by(MacroDaily.date)
+        macro_rows = session.execute(
+            select(MacroDaily.date, MacroDaily.spy_close)
+            .where(
+                MacroDaily.date >= rows[0].date,
+                MacroDaily.date <= rows[-1].date,
+                MacroDaily.spy_close.is_not(None),
             )
-            .all()
-        )
+            .order_by(MacroDaily.date)
+        ).all()
         spy_by_date: dict[DateType, float] = {r.date: float(r.spy_close) for r in macro_rows}  # type: ignore[arg-type]
 
         # Normalize SPY to the strategy's starting capital using the first

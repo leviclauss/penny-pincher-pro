@@ -178,6 +178,43 @@ def test_strategy_run_writes_equity_and_trade_rows(client: TestClient) -> None:
         assert closed[0]["cycle_id"] is not None
 
 
+def test_strategy_launcher_threads_hold_losers_to_expiry(client: TestClient) -> None:
+    """The API must propagate ``hold_losers_to_expiry`` into the persisted params.
+
+    Regression: the API previously dropped fields not listed in
+    ``StrategyParamsIn``, so the True Wheel preset ran with the default
+    (False) regardless of what the UI sent.
+    """
+    config_id = _seed_universe()
+
+    on = client.post(
+        "/api/backtest/runs",
+        json={
+            "mode": "strategy",
+            "config_id": config_id,
+            "start_date": START.isoformat(),
+            "end_date": END.isoformat(),
+            "strategy_params": {"hold_losers_to_expiry": True},
+        },
+    )
+    assert on.status_code == 202, on.text
+    on_params = on.json()["params_json"]
+    assert on_params["hold_losers_to_expiry"] is True
+
+    off = client.post(
+        "/api/backtest/runs",
+        json={
+            "mode": "strategy",
+            "config_id": config_id,
+            "start_date": START.isoformat(),
+            "end_date": END.isoformat(),
+        },
+    )
+    assert off.status_code == 202, off.text
+    off_params = off.json()["params_json"]
+    assert off_params["hold_losers_to_expiry"] is False
+
+
 def test_failed_strategy_run_lands_failed_with_error_message(
     client: TestClient,
 ) -> None:
