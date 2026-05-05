@@ -421,6 +421,7 @@ export interface StrategyParamsIn {
   manage_dte?: number;
   fee_per_contract?: number;
   slippage_per_share?: number;
+  hold_losers_to_expiry?: boolean;
 }
 
 export interface BacktestRunIn {

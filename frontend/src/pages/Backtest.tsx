@@ -28,6 +28,7 @@ import type {
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
 import {
   Table,
@@ -1081,7 +1082,17 @@ function RunsCard(): JSX.Element {
   );
 }
 
-const STRATEGY_DEFAULTS: Required<StrategyParamsIn> = {
+type NumericStrategyKey =
+  | "starting_capital"
+  | "max_concurrent_positions"
+  | "dte_target"
+  | "delta_target"
+  | "profit_take_pct"
+  | "manage_dte"
+  | "fee_per_contract"
+  | "slippage_per_share";
+
+const STRATEGY_DEFAULTS: Record<NumericStrategyKey, number> = {
   starting_capital: 10000,
   max_concurrent_positions: 5,
   dte_target: 30,
@@ -1092,13 +1103,11 @@ const STRATEGY_DEFAULTS: Required<StrategyParamsIn> = {
   slippage_per_share: 0.02,
 };
 
-type StrategyFormState = {
-  [K in keyof Required<StrategyParamsIn>]: string;
-};
+type StrategyFormState = Record<NumericStrategyKey, string>;
 
 function strategyDefaultsAsForm(): StrategyFormState {
   const out = {} as StrategyFormState;
-  (Object.keys(STRATEGY_DEFAULTS) as Array<keyof StrategyFormState>).forEach((k) => {
+  (Object.keys(STRATEGY_DEFAULTS) as NumericStrategyKey[]).forEach((k) => {
     out[k] = String(STRATEGY_DEFAULTS[k]);
   });
   return out;
@@ -1121,6 +1130,7 @@ function RunLauncherCard(): JSX.Element {
   const [strategyForm, setStrategyForm] = useState<StrategyFormState>(
     strategyDefaultsAsForm(),
   );
+  const [holdLosersToExpiry, setHoldLosersToExpiry] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const run = useMutation({
@@ -1178,9 +1188,7 @@ function RunLauncherCard(): JSX.Element {
       payload.forward_days = fd;
     } else {
       const sp: StrategyParamsIn = {};
-      for (const key of Object.keys(STRATEGY_DEFAULTS) as Array<
-        keyof StrategyParamsIn
-      >) {
+      for (const key of Object.keys(STRATEGY_DEFAULTS) as NumericStrategyKey[]) {
         const raw = strategyForm[key];
         const parsed = parseFloat(raw);
         if (raw === "" || isNaN(parsed)) {
@@ -1201,6 +1209,7 @@ function RunLauncherCard(): JSX.Element {
         setError("Profit-take % must be between 0 and 1.");
         return;
       }
+      sp.hold_losers_to_expiry = holdLosersToExpiry;
       payload.strategy_params = sp;
     }
 
@@ -1342,6 +1351,19 @@ function RunLauncherCard(): JSX.Element {
                   />
                 </div>
               ))}
+            </div>
+            <div className="mt-4">
+              <Checkbox
+                id="bt-sp-hold-losers"
+                checked={holdLosersToExpiry}
+                onChange={(e) => setHoldLosersToExpiry(e.target.checked)}
+                label="Hold losers to expiry (true wheel)"
+              />
+              <p className="text-muted-foreground mt-1 text-xs">
+                Skip the manage-DTE buy-back when it would realize a loss. ITM
+                puts ride to assignment, ITM calls deliver shares at the
+                cost-basis-floored strike. Pair with the True Wheel preset.
+              </p>
             </div>
           </div>
         )}
