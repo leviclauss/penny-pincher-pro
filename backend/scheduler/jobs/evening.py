@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session
 from core.logging import get_logger
 from core.time import utcnow
 from ingestion.alpaca_client import AlpacaClient
+from ingestion.earnings import EarningsSource
+from ingestion.macro import IndexHistorySource
 from ingestion.options import ChainSource
 from ingestion.pipeline import run_incremental
 from scheduler.context import job_run
@@ -34,6 +36,8 @@ def run_evening_pipeline(
     *,
     alpaca_client: AlpacaClient,
     options_client: ChainSource | None = None,
+    earnings_client: EarningsSource | None = None,
+    macro_client: IndexHistorySource | None = None,
     market_calendar: str | None = None,
     as_of: date | None = None,
 ) -> None:
@@ -56,6 +60,10 @@ def run_evening_pipeline(
             alpaca_client,
             options_client=options_client,
             skip_options=options_client is None,
+            earnings_client=earnings_client,
+            skip_earnings=earnings_client is None,
+            macro_client=macro_client,
+            skip_macro=macro_client is None,
         )
         ctx.set_result(
             mode=summary.mode,
@@ -66,6 +74,8 @@ def run_evening_pipeline(
                 summary.options.contracts_written if summary.options is not None else 0
             ),
             iv_rows=summary.iv.iv_rows_written,
+            earnings_rows=(summary.earnings.rows_written if summary.earnings is not None else 0),
+            macro_rows=(summary.macro.rows_written if summary.macro is not None else 0),
             as_of=today.isoformat(),
         )
 
