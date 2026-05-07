@@ -537,6 +537,93 @@ def test_hold_losers_to_expiry_still_takes_profit(session: Session) -> None:
     assert closes[0].realized_pnl is not None and closes[0].realized_pnl > 0
 
 
+def test_hold_losers_to_expiry_skips_close_when_fees_flip_net_negative(
+    session: Session,
+) -> None:
+    """The skip predicate must check net-after-fees, not premium-only.
+
+    Regression for the True Wheel run #11 anomaly: the manage-DTE close
+    fired on positions where the premium leg was fractionally profitable
+    (e.g., +$0.97) but the $1.30 round-trip fees flipped the net negative,
+    leaking small losses through despite ``hold_losers_to_expiry=True``.
+    """
+    from dataclasses import dataclass
+
+    from backtest.portfolio import MarkInputs, OptionPosition, Portfolio
+    from backtest.pricing import OptionQuote
+    from backtest.simulator import _apply_management_rules, _SimState
+    from screener.pipeline import ParsedConfig
+
+    @dataclass
+    class _FixedMidPricer:
+        """Stub pricer that returns a chosen mid; only ``price_option`` is used here."""
+
+        mid: float
+
+        def price_option(
+            self,
+            *,
+            symbol: str,
+            as_of: date,
+            option_type: str,
+            spot: float,
+            strike: float,
+            expiration: date,
+            sigma: float,
+            risk_free_rate: float = 0.045,
+        ) -> OptionQuote:
+            return OptionQuote(
+                option_type=option_type,
+                spot=spot,
+                strike=strike,
+                expiration=expiration,
+                as_of=as_of,
+                sigma=sigma,
+                risk_free_rate=risk_free_rate,
+                mid=self.mid,
+                delta=-0.10,
+            )
+
+    portfolio = Portfolio(cash=10_000.0, starting_capital=10_000.0)
+    # entry $1.00 - (close_cost $0.995) = $0.50 leg P/L; fees $1.30 → net -$0.80.
+    # close_cost = mid 0.975 + slippage 0.02; pct_profit = 0.5% (positive),
+    # so the buggy premium-only predicate would have closed it.
+    state = _SimState(
+        run_id=1,
+        portfolio=portfolio,
+        params=StrategyParams(
+            manage_dte=21,
+            profit_take_pct=0.50,
+            fee_per_contract=0.65,
+            slippage_per_share=0.02,
+            hold_losers_to_expiry=True,
+        ),
+        config=ParsedConfig(id=1, name="x", filters=(), weights={}, sector_max=None),
+        universe=["TEST"],
+        pricer=_FixedMidPricer(mid=0.975),
+    )
+    today = date(2024, 7, 1)
+    opt = OptionPosition(
+        cycle_id=1,
+        symbol="TEST",
+        leg_type="short_put",
+        contracts=1,
+        strike=80.0,
+        expiration=date(2024, 7, 12),  # 11 calendar days → inside manage_dte=21
+        entry_date=date(2024, 6, 1),
+        entry_premium=1.00,
+        fees_open=0.65,
+    )
+    portfolio.add_option(opt)
+    spot_cache = {"TEST": MarkInputs(spot=85.0, sigma=0.30)}
+    _apply_management_rules(state, today, spot_cache)
+
+    assert opt in portfolio.options, (
+        "fees-flip case should defer close — premium leg is +$0.50 but fees -$1.30 → net -$0.80"
+    )
+    assert not [t for t in state.pending if t.leg_type == LEG_CSP_CLOSE]
+
+
 def test_hold_losers_to_expiry_lets_crashing_put_assign(session: Session) -> None:
     """End-to-end: with the flag set, ITM puts in a downtrend assign at expiry."""
     config_id = _seed_crashing_universe(session, symbol="CRA")
