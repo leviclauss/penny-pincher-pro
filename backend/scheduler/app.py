@@ -30,8 +30,12 @@ from core.config import get_settings
 from core.logging import get_logger
 from db import get_session
 from ingestion.alpaca_client import AlpacaClient, AlpacaDataError
+from ingestion.earnings import EarningsSource
+from ingestion.finnhub_client import FinnhubClient, FinnhubError
+from ingestion.macro import IndexHistorySource
 from ingestion.options import ChainSource
 from ingestion.options_client import AlpacaOptionsClient, AlpacaOptionsError
+from ingestion.yahoo_client import YahooClient
 from scheduler.jobs.backup import JOB_NAME as BACKUP_JOB_NAME
 from scheduler.jobs.backup import run_backup
 from scheduler.jobs.digest import EVENING_JOB_NAME as EVENING_DIGEST_JOB_NAME
@@ -277,12 +281,16 @@ def _evening_entry() -> None:
         log.warning("evening_pipeline.no_alpaca_creds_skipped")
         return
     options = build_options_client()
+    earnings = build_earnings_client()
+    macro = build_macro_client()
     calendar = settings.market_calendar or None
     with get_session() as session:
         run_evening_pipeline(
             session,
             alpaca_client=alpaca,
             options_client=options,
+            earnings_client=earnings,
+            macro_client=macro,
             market_calendar=calendar,
         )
 
@@ -512,3 +520,15 @@ def build_options_client() -> ChainSource | None:
         return AlpacaOptionsClient()
     except AlpacaOptionsError:
         return None
+
+
+def build_earnings_client() -> EarningsSource | None:
+    try:
+        return FinnhubClient()
+    except FinnhubError:
+        log.info("evening_pipeline.finnhub_unavailable", reason="missing_api_key")
+        return None
+
+
+def build_macro_client() -> IndexHistorySource | None:
+    return YahooClient()

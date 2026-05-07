@@ -20,15 +20,18 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from alembic import command
-from db.models.market import Ticker
+from db.models.market import MacroDaily, Ticker
 from db.models.system import JobRun
 from ingestion.alpaca_client import AlpacaClient
+from ingestion.macro import VIX9D_SYMBOL, VIX_SYMBOL
+from ingestion.yahoo_client import IndexBarRecord
 from scheduler.app import create_and_start, get_job_body, register_job, shutdown
 from scheduler.context import STATUS_FAILURE, STATUS_SUCCESS
 from scheduler.jobs.evening import JOB_NAME as EVENING_JOB_NAME
 from scheduler.jobs.evening import run_evening_pipeline
 from tests.test_bars_fetcher import FIXTURE_END
 from tests.test_bars_fetcher import _fake_client_for as build_fake
+from tests.test_macro_fetcher import FakeYahooClient
 
 
 @pytest.fixture
@@ -109,6 +112,33 @@ def test_evening_pipeline_skips_on_holiday(session: Session) -> None:
     assert row.status == STATUS_SUCCESS
     assert row.result_json is not None
     assert row.result_json["skipped"] == "holiday"
+
+
+def test_evening_pipeline_writes_macro_when_client_provided(session: Session) -> None:
+    fake = build_fake(["AAA"])
+    yahoo = FakeYahooClient(
+        {
+            VIX_SYMBOL: [IndexBarRecord(symbol=VIX_SYMBOL, date=FIXTURE_END, close=18.0)],
+            VIX9D_SYMBOL: [IndexBarRecord(symbol=VIX9D_SYMBOL, date=FIXTURE_END, close=16.0)],
+        }
+    )
+
+    run_evening_pipeline(
+        session,
+        alpaca_client=cast(AlpacaClient, fake),
+        options_client=None,
+        macro_client=yahoo,
+        market_calendar=None,
+        as_of=FIXTURE_END,
+    )
+
+    row = session.execute(select(JobRun).where(JobRun.job_name == EVENING_JOB_NAME)).scalar_one()
+    assert row.status == STATUS_SUCCESS
+    assert row.result_json is not None
+    assert row.result_json["macro_rows"] >= 1
+
+    macro_count = session.execute(select(MacroDaily).where(MacroDaily.date == FIXTURE_END)).all()
+    assert len(macro_count) == 1
 
 
 def test_evening_pipeline_runs_on_trading_day(session: Session) -> None:
