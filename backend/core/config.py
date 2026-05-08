@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     scheduler_evening_minute: int = 30
     scheduler_screener_offset_minutes: int = 30
     scheduler_universe_scan_offset_minutes: int = 60
+    # Options-history keep-current backfills *yesterday's* flat-file chain
+    # rows so the strategy backtest's RealChainPricer keeps rolling forward.
+    # Defaults to 90 minutes after the evening pipeline so flat files have
+    # settled. Skips cleanly when Polygon flat-file creds aren't configured.
+    scheduler_options_history_offset_minutes: int = 90
     scheduler_positions_hour: int = 18
     scheduler_positions_minute: int = 0
     scheduler_morning_digest_hour: int = 8

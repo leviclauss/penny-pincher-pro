@@ -95,8 +95,9 @@ Schema decisions worth knowing:
   `POLYGON_FLATFILES_ACCESS_KEY_ID` + `SECRET`); per-contract REST
   is available via `--source rest` (requires `POLYGON_API_KEY`). Flat
   files need the `backup-s3` extra for boto3. Powers the strategy
-  backtest's `RealChainPricer` mode (CLI flag `--use-real-chain`) and
-  the `iv_backfill` pass that seeds historical `iv_atm`. Polygon
+  backtest's `RealChainPricer` (the default; pass `--no-real-chain` to
+  fall back to pure synthetic Black-Scholes) and the `iv_backfill`
+  pass that seeds historical `iv_atm`. Polygon
   Developer doesn't expose historical bid/ask at this tier, so `close`
   is the stored mark.
 - `earnings` is populated by Finnhub (free tier, US equities only) for
@@ -164,8 +165,8 @@ Non-obvious commands:
 | Intraday pulse (only when `SCHEDULER_INTRADAY_ENABLED=true`) | `curl -X POST http://localhost:8000/api/system/jobs/intraday_pulse/run` |
 | Update indicator snapshot | `cd backend && pytest tests/test_indicators.py --snapshot-update` |
 | Filter backtest | `cd backend && python -m backtest.cli --mode filter --config-id N --start YYYY-MM-DD --end YYYY-MM-DD` |
-| Strategy backtest | `cd backend && python -m backtest.cli --mode strategy --config-id N --start YYYY-MM-DD --end YYYY-MM-DD --starting-capital 10000` |
-| Strategy backtest with real chain prices | append `--use-real-chain` (requires `options_history` backfill) |
+| Strategy backtest (uses `options_historical` by default, synth fallback per row) | `cd backend && python -m backtest.cli --mode strategy --config-id N --start YYYY-MM-DD --end YYYY-MM-DD --starting-capital 10000` |
+| Strategy backtest forcing pure-synthetic pricing | append `--no-real-chain` |
 
 Strategy-backtest knobs (all optional, defaults in
 `backtest/cli.py`): `--max-concurrent-positions`, `--delta-target`,

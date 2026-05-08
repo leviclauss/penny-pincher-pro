@@ -43,9 +43,11 @@ migration and is now actively used end-to-end.
       preferences. Responsive cards on narrow viewports.
 - [x] **06 — Backtesting.** Filter forward-return CLI
       (`backtest.cli --mode filter`) and full-wheel strategy simulator
-      (`--mode strategy`) using synthetic Black–Scholes pricing or
-      `--use-real-chain` against the historical `options_historical`
-      backfill. `/backtest` UI page with a per-trade detail dialog.
+      (`--mode strategy`) which prices from the historical
+      `options_historical` backfill by default (per-row synthetic
+      Black–Scholes fallback for missing strikes); pass `--no-real-chain`
+      to force pure synthetic. `/backtest` UI page with a per-trade
+      detail dialog.
 - [x] **07 — Scheduler & jobs.** APScheduler embedded in the FastAPI
       lifespan, `evening_pipeline` job, `job_run()` context manager
       writing every execution to `job_runs`, `/api/system/jobs` +

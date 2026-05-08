@@ -35,6 +35,7 @@ class BacktestRun(Base):
     end_date: Mapped[DateType] = mapped_column(Date, nullable=False)
     starting_capital: Mapped[float] = mapped_column(Float, nullable=False)
     params_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    metrics_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )

@@ -41,6 +41,8 @@ from scheduler.jobs.evening import JOB_NAME as EVENING_JOB_NAME
 from scheduler.jobs.evening import run_evening_pipeline
 from scheduler.jobs.intraday import JOB_NAME as INTRADAY_JOB_NAME
 from scheduler.jobs.intraday import run_intraday_pulse
+from scheduler.jobs.options_history import JOB_NAME as OPTIONS_HISTORY_JOB_NAME
+from scheduler.jobs.options_history import run_options_history_keep_current
 from scheduler.jobs.positions import JOB_NAME as POSITIONS_JOB_NAME
 from scheduler.jobs.positions import run_position_management
 from scheduler.jobs.screener import JOB_NAME as SCREENER_JOB_NAME
@@ -143,6 +145,17 @@ def create_and_start() -> BackgroundScheduler:
         settings.scheduler_universe_scan_offset_minutes,
     )
     _register_universe_scan(scheduler, universe_hour, universe_minute, settings.timezone)
+    options_history_hour, options_history_minute = _add_minutes(
+        settings.scheduler_evening_hour,
+        settings.scheduler_evening_minute,
+        settings.scheduler_options_history_offset_minutes,
+    )
+    _register_options_history(
+        scheduler,
+        options_history_hour,
+        options_history_minute,
+        settings.timezone,
+    )
     _register_positions(
         scheduler,
         settings.scheduler_positions_hour,
@@ -344,6 +357,41 @@ def _universe_scan_entry() -> None:
     calendar = settings.market_calendar or None
     with get_session() as session:
         run_universe_scan_job(session, market_calendar=calendar)
+
+
+def _register_options_history(
+    scheduler: BackgroundScheduler, hour: int, minute: int, timezone: str
+) -> None:
+    cron = f"{minute} {hour} * * mon-fri"
+    schedule_human = f"Mon-Fri {hour:02d}:{minute:02d} {timezone}"
+    scheduler.add_job(
+        _options_history_entry,
+        trigger=CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute),
+        id=OPTIONS_HISTORY_JOB_NAME,
+        replace_existing=True,
+    )
+    register_job(
+        OPTIONS_HISTORY_JOB_NAME,
+        factory=lambda: _options_history_entry,
+        description=(
+            "Daily options_historical keep-current: yesterday's flat-file chain "
+            "for the active watchlist (powers the backtest RealChainPricer)."
+        ),
+        cron=cron,
+        timezone=timezone,
+        schedule_human=schedule_human,
+    )
+
+
+def _options_history_entry() -> None:
+    settings = get_settings()
+    calendar = settings.market_calendar or None
+    with get_session() as session:
+        run_options_history_keep_current(
+            session,
+            settings=settings,
+            market_calendar=calendar,
+        )
 
 
 def _register_positions(

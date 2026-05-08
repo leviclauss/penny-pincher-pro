@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { Alerts } from "@/pages/Alerts";
 import { Backtest } from "@/pages/Backtest";
+import { BacktestCompare } from "@/pages/BacktestCompare";
 import { Dashboard } from "@/pages/Dashboard";
 import { Discovery } from "@/pages/Discovery";
 import { Jobs } from "@/pages/Jobs";
@@ -32,6 +33,7 @@ export function App(): JSX.Element {
           <Route path="positions/:id" element={<PositionDetail />} />
           <Route path="alerts" element={<Alerts />} />
           <Route path="backtest" element={<Backtest />} />
+          <Route path="backtest/compare" element={<BacktestCompare />} />
           <Route path="jobs" element={<Jobs />} />
           <Route path="settings" element={<Settings />} />
           <Route path="404" element={<NotFound />} />

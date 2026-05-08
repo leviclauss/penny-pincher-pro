@@ -383,6 +383,23 @@ export interface BacktestRunOut {
   final_equity: number | null;
   total_return_pct: number | null;
   cycles_completed: number | null;
+  // Full metric pack (Sharpe, drawdown, win-rate, etc.) on strategy runs.
+  metrics: BacktestMetrics | null;
+}
+
+export interface BacktestMetrics {
+  sharpe: number | null;
+  sortino: number | null;
+  max_drawdown_pct: number | null;
+  cagr: number | null;
+  win_rate: number | null;
+  avg_win: number | null;
+  avg_loss: number | null;
+  profit_factor: number | null;
+  expectancy: number | null;
+  cycles_completed: number;
+  assignment_rate: number | null;
+  avg_dte_held: number | null;
 }
 
 export interface BacktestTradeOut {
@@ -422,6 +439,7 @@ export interface StrategyParamsIn {
   fee_per_contract?: number;
   slippage_per_share?: number;
   hold_losers_to_expiry?: boolean;
+  use_real_chain?: boolean;
 }
 
 export interface BacktestRunIn {
@@ -432,4 +450,32 @@ export interface BacktestRunIn {
   forward_days?: number;
   symbols?: string[] | null;
   strategy_params?: StrategyParamsIn;
+}
+
+export interface BacktestCoverageOut {
+  start: string;
+  end: string;
+  calendar: string;
+  trading_days: number;
+  symbols_requested: string[];
+  symbols_with_any_data: string[];
+  symbols_missing: string[];
+  symbol_day_pairs_expected: number;
+  symbol_day_pairs_present: number;
+  coverage_pct: number;
+  first_uncovered_day: string | null;
+}
+
+export interface BacktestCompareEquityPoint {
+  date: string;
+  // Server emits {[run_id]: ratio}; pydantic stringifies the int keys.
+  runs: Record<string, number>;
+  spy_ratio: number | null;
+}
+
+export interface BacktestCompareOut {
+  runs: BacktestRunOut[];
+  common_start: string | null;
+  common_end: string | null;
+  equity: BacktestCompareEquityPoint[];
 }

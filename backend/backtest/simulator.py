@@ -275,6 +275,11 @@ def run_strategy_backtest(
         "calendar": calendar_name,
         **params.to_dict(),
     }
+    run.metrics_json = _compute_run_metrics(
+        session,
+        run_id=run_id,
+        risk_free_rate=params.risk_free_rate,
+    )
     session.commit()
     log.info(
         "backtest.strategy.summary",
@@ -285,6 +290,36 @@ def run_strategy_backtest(
         return_pct=round(summary.total_return_pct, 2),
     )
     return summary
+
+
+def _compute_run_metrics(
+    session: Session,
+    *,
+    run_id: int,
+    risk_free_rate: float,
+) -> dict[str, float | int | None]:
+    """Read freshly-flushed equity + trades and persist the metric pack."""
+    from .metrics import compute_strategy_metrics  # lazy: avoid import cycle on init.
+
+    equity_rows = (
+        session.execute(
+            select(BacktestEquity.date, BacktestEquity.equity)
+            .where(BacktestEquity.run_id == run_id)
+            .order_by(BacktestEquity.date)
+        )
+        .all()
+    )
+    trades = (
+        session.execute(select(BacktestTrade).where(BacktestTrade.run_id == run_id))
+        .scalars()
+        .all()
+    )
+    metrics = compute_strategy_metrics(
+        equity_series=[(row[0], float(row[1])) for row in equity_rows],
+        trades=trades,
+        risk_free_rate=risk_free_rate,
+    )
+    return metrics.to_dict()
 
 
 def _mark_failed(session: Session, run_id: int, message: str) -> None:

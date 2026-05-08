@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 
 from alembic import command
 from db import get_engine, get_session, get_sessionmaker
-from db.models.market import BarDaily, IndicatorDaily, Ticker
+from db.models.market import BarDaily, IndicatorDaily, OptionsHistorical, Ticker
 from db.models.screener import FilterConfig
 
 START = date(2024, 6, 3)
@@ -143,6 +143,135 @@ def test_strategy_launcher_returns_202_and_completes_in_background(client: TestC
     # Filter-only stats stay None on strategy runs.
     assert final["mean_return_pct"] is None
     assert final["win_rate"] is None
+    # Metric pack is computed at run completion and surfaced under `metrics`.
+    assert final["metrics"] is not None
+    assert "max_drawdown_pct" in final["metrics"]
+    assert "cycles_completed" in final["metrics"]
+
+
+def test_coverage_endpoint_reports_partial_fill(client: TestClient) -> None:
+    """Seed two tickers + ``options_historical`` for one of them and one day.
+
+    Expects: ``coverage_pct`` reflects 1/(2*trading_days), the missing
+    symbol shows up in ``symbols_missing``, and ``first_uncovered_day`` is
+    the first trading day in the window.
+    """
+    _seed_universe()
+    # Add a single options_historical row for AAA on the first trading day.
+    days = _trading_days(START, END)
+    with get_session() as session:
+        from datetime import UTC, datetime as dt
+
+        session.add(
+            OptionsHistorical(
+                symbol="AAA",
+                as_of=days[0],
+                expiration=days[0],
+                strike=100.0,
+                option_type="put",
+                close=1.0,
+                fetched_at=dt.now(UTC),
+            )
+        )
+
+    response = client.get(
+        "/api/backtest/coverage",
+        params={
+            "start": START.isoformat(),
+            "end": END.isoformat(),
+            "symbols": "aaa,bbb",
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["symbols_requested"] == ["AAA", "BBB"]
+    assert body["symbols_with_any_data"] == ["AAA"]
+    assert body["symbols_missing"] == ["BBB"]
+    assert body["trading_days"] == len(days)
+    assert body["symbol_day_pairs_expected"] == 2 * len(days)
+    assert body["symbol_day_pairs_present"] == 1
+    assert body["coverage_pct"] == 1 / (2 * len(days))
+    assert body["first_uncovered_day"] == days[0].isoformat()
+
+
+def test_coverage_endpoint_rejects_inverted_window(client: TestClient) -> None:
+    response = client.get(
+        "/api/backtest/coverage",
+        params={"start": END.isoformat(), "end": START.isoformat()},
+    )
+    assert response.status_code == 400
+
+
+def test_compare_runs_returns_normalized_equity(client: TestClient) -> None:
+    """Two strategy runs over the same window → compare returns aligned ratios."""
+    config_id = _seed_universe()
+
+    def _launch(capital: float) -> int:
+        response = client.post(
+            "/api/backtest/runs",
+            json={
+                "mode": "strategy",
+                "config_id": config_id,
+                "start_date": START.isoformat(),
+                "end_date": END.isoformat(),
+                "strategy_params": {
+                    "starting_capital": capital,
+                    "max_concurrent_positions": 2,
+                },
+            },
+        )
+        assert response.status_code == 202
+        return response.json()["id"]
+
+    run_a = _launch(25_000.0)
+    run_b = _launch(50_000.0)
+
+    response = client.get(f"/api/backtest/runs/compare?ids={run_a},{run_b}")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert {r["id"] for r in body["runs"]} == {run_a, run_b}
+    assert body["common_start"] == START.isoformat()
+    assert body["common_end"] == END.isoformat()
+    assert len(body["equity"]) == len(_trading_days(START, END))
+    sample = body["equity"][0]
+    assert str(run_a) in sample["runs"]
+    assert str(run_b) in sample["runs"]
+    # Day-0 ratios anchor near 1.0 since equity starts ≈ starting capital
+    # (a small option premium credit on the first trading day shifts it
+    # slightly above or below 1).
+    assert abs(sample["runs"][str(run_a)] - 1.0) < 0.05
+    assert abs(sample["runs"][str(run_b)] - 1.0) < 0.05
+
+
+def test_compare_runs_rejects_filter_mode(client: TestClient) -> None:
+    config_id = _seed_universe()
+    # Launch a filter-mode run to use as the offending input.
+    response = client.post(
+        "/api/backtest/runs",
+        json={
+            "mode": "filter",
+            "config_id": config_id,
+            "start_date": START.isoformat(),
+            "end_date": END.isoformat(),
+            "forward_days": 10,
+        },
+    )
+    filter_id = response.json()["id"]
+
+    response = client.get(f"/api/backtest/runs/compare?ids={filter_id}")
+    assert response.status_code == 400
+    assert "strategy" in response.json()["detail"].lower()
+
+
+def test_compare_runs_caps_at_three(client: TestClient) -> None:
+    response = client.get("/api/backtest/runs/compare?ids=1,2,3,4")
+    assert response.status_code == 400
+    assert "at most" in response.json()["detail"]
+
+
+def test_compare_runs_404_for_missing(client: TestClient) -> None:
+    response = client.get("/api/backtest/runs/compare?ids=9999")
+    assert response.status_code == 404
 
 
 def test_strategy_run_writes_equity_and_trade_rows(client: TestClient) -> None:
