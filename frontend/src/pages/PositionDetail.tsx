@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, FileText, Loader2, Save } from "lucide-react";
+import { ChevronLeft, FileText, Loader2, Pencil, Save, Trash2 } from "lucide-react";
 import {
   fetchPosition,
   fetchPositionAttribution,
@@ -18,6 +18,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/Table";
+import { DeletePositionDialog } from "@/components/positions/DeletePositionDialog";
+import { EditClosedPositionDialog } from "@/components/positions/EditClosedPositionDialog";
 import {
   TransitionDialog,
   type TransitionKind,
@@ -56,6 +58,8 @@ export function PositionDetail(): JSX.Element {
   });
 
   const [transition, setTransition] = useState<TransitionKind | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (!Number.isFinite(positionId)) {
     return <div className="text-muted-foreground">Invalid position id.</div>;
@@ -109,6 +113,8 @@ export function PositionDetail(): JSX.Element {
           <ActionBar
             state={position.state}
             onTrigger={(kind) => setTransition(kind)}
+            onEdit={() => setEditOpen(true)}
+            onDelete={() => setDeleteOpen(true)}
           />
         </div>
       </div>
@@ -138,6 +144,20 @@ export function PositionDetail(): JSX.Element {
         kind={transition}
         onClose={() => setTransition(null)}
       />
+      {position.state === "closed" && (
+        <>
+          <EditClosedPositionDialog
+            position={position}
+            open={editOpen}
+            onOpenChange={setEditOpen}
+          />
+          <DeletePositionDialog
+            position={position}
+            open={deleteOpen}
+            onOpenChange={setDeleteOpen}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -145,9 +165,16 @@ export function PositionDetail(): JSX.Element {
 interface ActionBarProps {
   state: string;
   onTrigger: (kind: TransitionKind) => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }
 
-function ActionBar({ state, onTrigger }: ActionBarProps): JSX.Element | null {
+function ActionBar({
+  state,
+  onTrigger,
+  onEdit,
+  onDelete,
+}: ActionBarProps): JSX.Element | null {
   if (state === "short_put") {
     return (
       <div className="flex flex-wrap gap-2">
@@ -180,6 +207,20 @@ function ActionBar({ state, onTrigger }: ActionBarProps): JSX.Element | null {
         </Button>
         <Button variant="outline" onClick={() => onTrigger("called_away")}>
           Called away
+        </Button>
+      </div>
+    );
+  }
+  if (state === "closed") {
+    return (
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" onClick={onEdit}>
+          <Pencil className="mr-1 h-3.5 w-3.5" />
+          Edit
+        </Button>
+        <Button variant="destructive" onClick={onDelete}>
+          <Trash2 className="mr-1 h-3.5 w-3.5" />
+          Delete
         </Button>
       </div>
     );

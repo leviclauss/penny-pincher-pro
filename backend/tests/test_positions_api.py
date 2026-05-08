@@ -275,3 +275,94 @@ def test_close_shares_manual_endpoint(client: TestClient) -> None:
     assert body["state"] == "closed"
     shares = next(leg for leg in body["legs"] if leg["leg_type"] == "shares")
     assert shares["realized_pnl"] == pytest.approx(200.0)
+
+
+def _open_and_close_put(client: TestClient) -> int:
+    pid = client.post("/api/positions/short-put", json=_short_put_payload(credit=3.0)).json()["id"]
+    client.post(
+        f"/api/positions/{pid}/close-put",
+        json={"debit": 1.20, "closed_on": "2026-05-15", "fees": 1.30},
+    )
+    return pid
+
+
+def test_delete_closed_position(client: TestClient) -> None:
+    pid = _open_and_close_put(client)
+    resp = client.delete(f"/api/positions/{pid}")
+    assert resp.status_code == 204, resp.text
+    assert client.get(f"/api/positions/{pid}").status_code == 404
+
+
+def test_delete_open_position_rejected(client: TestClient) -> None:
+    pid = client.post("/api/positions/short-put", json=_short_put_payload()).json()["id"]
+    resp = client.delete(f"/api/positions/{pid}")
+    assert resp.status_code == 409
+    # still exists
+    assert client.get(f"/api/positions/{pid}").status_code == 200
+
+
+def test_delete_unknown_position_404(client: TestClient) -> None:
+    assert client.delete("/api/positions/9999").status_code == 404
+
+
+def test_patch_leg_on_closed_position(client: TestClient) -> None:
+    pid = _open_and_close_put(client)
+    leg_id = client.get(f"/api/positions/{pid}").json()["legs"][0]["id"]
+
+    resp = client.patch(
+        f"/api/positions/{pid}/legs/{leg_id}",
+        json={"entry_price": 3.50, "exit_price": 0.75, "fees": 2.00, "realized_pnl": 273.0},
+    )
+    assert resp.status_code == 200, resp.text
+    leg = next(item for item in resp.json()["legs"] if item["id"] == leg_id)
+    assert leg["entry_price"] == pytest.approx(3.50)
+    assert leg["exit_price"] == pytest.approx(0.75)
+    assert leg["fees"] == pytest.approx(2.00)
+    assert leg["realized_pnl"] == pytest.approx(273.0)
+
+
+def test_patch_leg_rejected_on_open_position(client: TestClient) -> None:
+    pid = client.post("/api/positions/short-put", json=_short_put_payload()).json()["id"]
+    leg_id = client.get(f"/api/positions/{pid}").json()["legs"][0]["id"]
+    resp = client.patch(f"/api/positions/{pid}/legs/{leg_id}", json={"entry_price": 9.99})
+    assert resp.status_code == 409
+
+
+def test_patch_leg_unknown_leg_404(client: TestClient) -> None:
+    pid = _open_and_close_put(client)
+    resp = client.patch(f"/api/positions/{pid}/legs/9999", json={"fees": 1.0})
+    assert resp.status_code == 404
+
+
+def test_patch_leg_negative_fees_rejected(client: TestClient) -> None:
+    pid = _open_and_close_put(client)
+    leg_id = client.get(f"/api/positions/{pid}").json()["legs"][0]["id"]
+    resp = client.patch(f"/api/positions/{pid}/legs/{leg_id}", json={"fees": -0.5})
+    assert resp.status_code == 422
+
+
+def test_patch_position_dates_on_closed_position(client: TestClient) -> None:
+    pid = _open_and_close_put(client)
+    resp = client.patch(
+        f"/api/positions/{pid}",
+        json={"opened_at": "2026-05-02T00:00:00Z", "closed_at": "2026-05-20T00:00:00Z"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["opened_at"].startswith("2026-05-02")
+    assert body["closed_at"].startswith("2026-05-20")
+
+
+def test_patch_position_dates_rejected_on_open(client: TestClient) -> None:
+    pid = client.post("/api/positions/short-put", json=_short_put_payload()).json()["id"]
+    resp = client.patch(f"/api/positions/{pid}", json={"opened_at": "2026-05-02T00:00:00Z"})
+    assert resp.status_code == 409
+
+
+def test_patch_position_dates_inverted_rejected(client: TestClient) -> None:
+    pid = _open_and_close_put(client)
+    resp = client.patch(
+        f"/api/positions/{pid}",
+        json={"opened_at": "2026-06-01T00:00:00Z", "closed_at": "2026-05-15T00:00:00Z"},
+    )
+    assert resp.status_code == 422
