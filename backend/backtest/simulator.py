@@ -667,9 +667,20 @@ def _apply_management_rules(state: _SimState, day: date, spot_cache: dict[str, M
             # (shares acquired at strike → covered-call leg next), and
             # ITM calls deliver shares at strike (which is floored at the
             # share cost basis by select_call_strike, so the cycle still
-            # closes at >= breakeven on the underlying).
-            if state.params.hold_losers_to_expiry and pct_profit < 0:
-                continue
+            # closes at >= breakeven on the underlying). The check uses
+            # net-after-fees realized P/L (matching the formula booked in
+            # `_close_option_for_credit`); a premium-only check leaks
+            # small losses through whenever the round-trip fees flip a
+            # marginally-profitable premium leg negative.
+            if state.params.hold_losers_to_expiry:
+                fee_close = state.params.fee_per_contract * opt.contracts
+                realized_if_close = (
+                    (opt.entry_premium - close_cost) * opt.shares_covered
+                    - opt.fees_open
+                    - fee_close
+                )
+                if realized_if_close < 0:
+                    continue
             rule = "manage_dte"
         if rule is None:
             continue
