@@ -10,9 +10,9 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from core.logging import get_logger
@@ -136,6 +136,24 @@ class CloseSharesBody(BaseModel):
 class PatchPositionBody(BaseModel):
     notes: str | None = None
     portfolio_id: int | None = None
+    opened_at: datetime | None = None
+    closed_at: datetime | None = None
+
+
+class PatchLegBody(BaseModel):
+    leg_type: str | None = None
+    symbol: str | None = Field(default=None, min_length=1, max_length=16)
+    expiration: date | None = None
+    strike: float | None = None
+    contracts: int | None = None
+    shares: int | None = None
+    entry_price: float | None = None
+    exit_price: float | None = None
+    entry_date: date | None = None
+    exit_date: date | None = None
+    outcome: str | None = None
+    realized_pnl: float | None = None
+    fees: float | None = None
 
 
 class AttributionOut(BaseModel):
@@ -515,12 +533,100 @@ def patch_position(position_id: int, body: PatchPositionBody) -> PositionOut:
         position = session.get(Position, position_id)
         if position is None:
             raise HTTPException(status_code=404, detail=f"position {position_id} not found")
-        if "notes" in body.model_fields_set:
+        fields = body.model_fields_set
+        if "notes" in fields:
             position.notes = body.notes
-        if "portfolio_id" in body.model_fields_set:
+        if "portfolio_id" in fields:
             _require_portfolio_exists(session, body.portfolio_id)
             position.portfolio_id = body.portfolio_id
+        if "opened_at" in fields or "closed_at" in fields:
+            if position.state != "closed":
+                raise HTTPException(
+                    status_code=409,
+                    detail="opened_at/closed_at can only be edited on closed positions",
+                )
+            if "opened_at" in fields:
+                if body.opened_at is None:
+                    raise HTTPException(status_code=422, detail="opened_at cannot be null")
+                position.opened_at = body.opened_at
+            if "closed_at" in fields:
+                if body.closed_at is None:
+                    raise HTTPException(status_code=422, detail="closed_at cannot be null")
+                position.closed_at = body.closed_at
+            if position.closed_at is not None and position.closed_at < position.opened_at:
+                raise HTTPException(
+                    status_code=422, detail="closed_at must be on or after opened_at"
+                )
+    log.info("positions.patch", id=position_id, fields=sorted(fields))
     return _load(position_id)
+
+
+@router.patch("/{position_id}/legs/{leg_id}", response_model=PositionOut)
+def patch_leg(position_id: int, leg_id: int, body: PatchLegBody) -> PositionOut:
+    """Edit fields on an individual leg of a closed position.
+
+    Only closed positions are editable so we can't accidentally desync an
+    open cycle's state machine; users open a new transition for live changes.
+    """
+    with get_session() as session:
+        position = session.get(Position, position_id)
+        if position is None:
+            raise HTTPException(status_code=404, detail=f"position {position_id} not found")
+        if position.state != "closed":
+            raise HTTPException(
+                status_code=409, detail="legs can only be edited on closed positions"
+            )
+        leg = session.get(PositionLeg, leg_id)
+        if leg is None or leg.position_id != position_id:
+            raise HTTPException(
+                status_code=404, detail=f"leg {leg_id} not found on position {position_id}"
+            )
+        fields = body.model_fields_set
+        for name in (
+            "leg_type",
+            "expiration",
+            "strike",
+            "contracts",
+            "shares",
+            "entry_price",
+            "exit_price",
+            "entry_date",
+            "exit_date",
+            "outcome",
+            "realized_pnl",
+        ):
+            if name in fields:
+                setattr(leg, name, getattr(body, name))
+        if "symbol" in fields:
+            leg.symbol = (body.symbol or "").upper()
+        if "fees" in fields:
+            if body.fees is None:
+                raise HTTPException(status_code=422, detail="fees cannot be null")
+            if body.fees < 0:
+                raise HTTPException(status_code=422, detail="fees must be >= 0")
+            leg.fees = body.fees
+    log.info("positions.patch_leg", id=position_id, leg_id=leg_id, fields=sorted(fields))
+    return _load(position_id)
+
+
+@router.delete("/{position_id}", status_code=204)
+def delete_position(position_id: int) -> Response:
+    """Hard-delete a closed position and its legs/snapshots.
+
+    Restricted to closed positions to avoid orphaning an active cycle.
+    """
+    with get_session() as session:
+        position = session.get(Position, position_id)
+        if position is None:
+            raise HTTPException(status_code=404, detail=f"position {position_id} not found")
+        if position.state != "closed":
+            raise HTTPException(status_code=409, detail="only closed positions can be deleted")
+        # Explicit deletes — SQLite doesn't enforce FK cascades by default.
+        session.execute(delete(PositionSnapshot).where(PositionSnapshot.position_id == position_id))
+        session.execute(delete(PositionLeg).where(PositionLeg.position_id == position_id))
+        session.delete(position)
+    log.info("positions.delete", id=position_id)
+    return Response(status_code=204)
 
 
 def _require_portfolio_exists(session: Session, portfolio_id: int | None) -> None:

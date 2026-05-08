@@ -321,11 +321,48 @@ export function openCoveredCallFresh(
 
 export function patchPosition(
   positionId: number,
-  patch: { notes?: string | null; portfolio_id?: number | null },
+  patch: {
+    notes?: string | null;
+    portfolio_id?: number | null;
+    opened_at?: string;
+    closed_at?: string;
+  },
 ): Promise<PositionOut> {
   return mutateJson<PositionOut>("PATCH", `/api/positions/${positionId}`, patch).then(
     (r) => r as PositionOut,
   );
+}
+
+export interface PositionLegPatch {
+  leg_type?: string;
+  symbol?: string;
+  expiration?: string | null;
+  strike?: number | null;
+  contracts?: number | null;
+  shares?: number | null;
+  entry_price?: number | null;
+  exit_price?: number | null;
+  entry_date?: string | null;
+  exit_date?: string | null;
+  outcome?: string | null;
+  realized_pnl?: number | null;
+  fees?: number;
+}
+
+export function patchPositionLeg(
+  positionId: number,
+  legId: number,
+  patch: PositionLegPatch,
+): Promise<PositionOut> {
+  return mutateJson<PositionOut>(
+    "PATCH",
+    `/api/positions/${positionId}/legs/${legId}`,
+    patch,
+  ).then((r) => r as PositionOut);
+}
+
+export function deletePosition(positionId: number): Promise<void> {
+  return mutateJson<void>("DELETE", `/api/positions/${positionId}`).then(() => undefined);
 }
 
 function postTransition<TBody>(
