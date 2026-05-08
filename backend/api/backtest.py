@@ -11,23 +11,26 @@ from datetime import date as DateType
 from datetime import datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
+from backtest.coverage import options_history_coverage
 from backtest.filter_backtest import (
     DEFAULT_STARTING_CAPITAL as FILTER_DEFAULT_CAPITAL,
 )
 from backtest.filter_backtest import (
     run_filter_backtest,
 )
+from backtest.pricing import RealChainPricer
 from backtest.simulator import StrategyParams, run_strategy_backtest
 from core.logging import get_logger
 from db import get_session
 from db.models.backtest import (
     MODE_FILTER,
     MODE_STRATEGY,
+    STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_RUNNING,
     BacktestEquity,
@@ -60,6 +63,7 @@ class StrategyParamsIn(BaseModel):
     fee_per_contract: float = Field(default=0.65, ge=0)
     slippage_per_share: float = Field(default=0.02, ge=0)
     hold_losers_to_expiry: bool = Field(default=False)
+    use_real_chain: bool = Field(default=True)
 
 
 class BacktestRunIn(BaseModel):
@@ -117,6 +121,9 @@ class BacktestRunOut(BaseModel):
     final_equity: float | None
     total_return_pct: float | None
     cycles_completed: int | None
+    # Full metric pack (Sharpe, drawdown, win-rate, etc.) — strategy mode only.
+    # Backfilled on read for older completed runs that pre-date metrics_json.
+    metrics: dict[str, float | int | None] | None
 
 
 class BacktestEquityPoint(BaseModel):
@@ -126,6 +133,261 @@ class BacktestEquityPoint(BaseModel):
     collateral_locked: float
     unrealized_pnl: float
     spy_benchmark: float | None = None
+
+
+class CoverageOut(BaseModel):
+    """``options_historical`` coverage report for a strategy-backtest window.
+
+    ``coverage_pct`` is the share of (symbol, trading-day) pairs in the window
+    that have at least one row in ``options_historical``. The strategy
+    backtest's ``RealChainPricer`` falls back to synthetic per-row, so partial
+    coverage is *safe* — the report exists so the UI can surface where
+    fallback would happen before the user kicks off a run.
+    """
+
+    start: DateType
+    end: DateType
+    calendar: str
+    trading_days: int
+    symbols_requested: list[str]
+    symbols_with_any_data: list[str]
+    symbols_missing: list[str]
+    symbol_day_pairs_expected: int
+    symbol_day_pairs_present: int
+    coverage_pct: float
+    first_uncovered_day: DateType | None
+
+
+@router.get("/coverage", response_model=CoverageOut)
+def get_coverage(
+    start: DateType,
+    end: DateType,
+    symbols: str | None = Query(default=None, description="Comma-separated symbols."),
+) -> CoverageOut:
+    """Report ``options_historical`` coverage for the proposed run window."""
+    if end < start:
+        raise HTTPException(status_code=400, detail="end must be on or after start")
+    symbol_list = (
+        [s.strip().upper() for s in symbols.split(",") if s.strip()] if symbols else None
+    )
+    with get_session() as session:
+        report = options_history_coverage(
+            session,
+            start=start,
+            end=end,
+            symbols=symbol_list,
+        )
+    return CoverageOut(
+        start=report.start,
+        end=report.end,
+        calendar=report.calendar,
+        trading_days=report.trading_days,
+        symbols_requested=report.symbols_requested,
+        symbols_with_any_data=report.symbols_with_any_data,
+        symbols_missing=report.symbols_missing,
+        symbol_day_pairs_expected=report.symbol_day_pairs_expected,
+        symbol_day_pairs_present=report.symbol_day_pairs_present,
+        coverage_pct=report.coverage_pct,
+        first_uncovered_day=report.first_uncovered_day,
+    )
+
+
+MAX_COMPARE_RUNS = 3
+
+
+class CompareEquityPoint(BaseModel):
+    """One date with each run's normalized equity (× their starting capital).
+
+    Each ``runs[run_id]`` value is the ratio ``equity_on_day / starting_capital``.
+    The frontend rescales it to whichever capital the user picks for the
+    overlay; reporting it as a ratio keeps the API agnostic.
+    """
+
+    date: DateType
+    runs: dict[int, float]
+    spy_ratio: float | None = None
+
+
+class BacktestCompareOut(BaseModel):
+    runs: list[BacktestRunOut]
+    common_start: DateType | None
+    common_end: DateType | None
+    equity: list[CompareEquityPoint]
+
+
+@router.get("/runs/compare", response_model=BacktestCompareOut)
+def compare_runs(ids: str = Query(..., description="Comma-separated run IDs.")) -> BacktestCompareOut:
+    """Fetch up to 3 strategy runs aligned on their overlapping date range.
+
+    Each run's equity series is normalized to a ratio against its own
+    starting capital so the curves can be compared regardless of capital.
+    Filter-mode runs are rejected with 400 (no equity series to align).
+    """
+    parsed = _parse_compare_ids(ids)
+
+    with get_session() as session:
+        rows = session.execute(select(BacktestRun).where(BacktestRun.id.in_(parsed))).scalars().all()
+        by_id = {r.id: r for r in rows}
+        missing = [i for i in parsed if i not in by_id]
+        if missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"runs not found: {','.join(str(i) for i in missing)}",
+            )
+        non_strategy = [i for i in parsed if by_id[i].mode != MODE_STRATEGY]
+        if non_strategy:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "compare only supports strategy-mode runs; offending: "
+                    + ",".join(str(i) for i in non_strategy)
+                ),
+            )
+
+        run_outs = [_build_run_out(session, by_id[i]) for i in parsed]
+        equity_by_run: dict[int, list[tuple[DateType, float]]] = {}
+        for run_id in parsed:
+            equity_rows = session.execute(
+                select(BacktestEquity.date, BacktestEquity.equity)
+                .where(BacktestEquity.run_id == run_id)
+                .order_by(BacktestEquity.date)
+            ).all()
+            equity_by_run[run_id] = [(r[0], float(r[1])) for r in equity_rows]
+
+        # Common window = intersection of every run's [first, last] date range.
+        # Empty intersection → empty equity payload but still return the run
+        # snapshots so the UI can show "no overlapping window" plus their stats.
+        common_start, common_end = _common_window(equity_by_run)
+
+        spy_by_date: dict[DateType, float] = {}
+        if common_start is not None and common_end is not None:
+            macro_rows = session.execute(
+                select(MacroDaily.date, MacroDaily.spy_close).where(
+                    MacroDaily.date >= common_start,
+                    MacroDaily.date <= common_end,
+                    MacroDaily.spy_close.is_not(None),
+                )
+            ).all()
+            spy_by_date = {r.date: float(r.spy_close) for r in macro_rows}  # type: ignore[arg-type]
+
+        equity_payload = _build_compare_equity(
+            parsed,
+            by_id,
+            equity_by_run,
+            common_start=common_start,
+            common_end=common_end,
+            spy_by_date=spy_by_date,
+        )
+
+    return BacktestCompareOut(
+        runs=run_outs,
+        common_start=common_start,
+        common_end=common_end,
+        equity=equity_payload,
+    )
+
+
+def _parse_compare_ids(ids: str) -> list[int]:
+    if not ids.strip():
+        raise HTTPException(status_code=400, detail="ids is required")
+    parsed: list[int] = []
+    seen: set[int] = set()
+    for token in ids.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            value = int(token)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail=f"invalid run id: {token!r}"
+            ) from exc
+        if value not in seen:
+            parsed.append(value)
+            seen.add(value)
+    if not parsed:
+        raise HTTPException(status_code=400, detail="ids is required")
+    if len(parsed) > MAX_COMPARE_RUNS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"compare supports at most {MAX_COMPARE_RUNS} runs",
+        )
+    return parsed
+
+
+def _common_window(
+    equity_by_run: dict[int, list[tuple[DateType, float]]],
+) -> tuple[DateType | None, DateType | None]:
+    starts: list[DateType] = []
+    ends: list[DateType] = []
+    for series in equity_by_run.values():
+        if not series:
+            return None, None
+        starts.append(series[0][0])
+        ends.append(series[-1][0])
+    if not starts:
+        return None, None
+    common_start = max(starts)
+    common_end = min(ends)
+    if common_start > common_end:
+        return None, None
+    return common_start, common_end
+
+
+def _build_compare_equity(
+    run_ids: list[int],
+    runs_by_id: dict[int, BacktestRun],
+    equity_by_run: dict[int, list[tuple[DateType, float]]],
+    *,
+    common_start: DateType | None,
+    common_end: DateType | None,
+    spy_by_date: dict[DateType, float],
+) -> list[CompareEquityPoint]:
+    if common_start is None or common_end is None:
+        return []
+
+    # Forward-fill each run's series so a missing day for one run doesn't
+    # drop the row entirely.
+    series_maps: dict[int, dict[DateType, float]] = {
+        run_id: {d: e for d, e in equity_by_run[run_id]} for run_id in run_ids
+    }
+
+    # Date axis = union of every run's dates inside the common window.
+    dates: set[DateType] = set()
+    for series in equity_by_run.values():
+        for d, _ in series:
+            if common_start <= d <= common_end:
+                dates.add(d)
+    sorted_dates = sorted(dates)
+
+    spy_anchor: float | None = None
+    for d in sorted_dates:
+        if d in spy_by_date:
+            spy_anchor = spy_by_date[d]
+            break
+
+    last_seen: dict[int, float] = {}
+    out: list[CompareEquityPoint] = []
+    for d in sorted_dates:
+        runs_payload: dict[int, float] = {}
+        for run_id in run_ids:
+            run = runs_by_id[run_id]
+            equity = series_maps[run_id].get(d)
+            if equity is None:
+                ratio = last_seen.get(run_id)
+            else:
+                if run.starting_capital <= 0:
+                    ratio = None
+                else:
+                    ratio = equity / run.starting_capital
+                    last_seen[run_id] = ratio
+            if ratio is not None:
+                runs_payload[run_id] = ratio
+        spy_ratio: float | None = None
+        if spy_anchor is not None and d in spy_by_date:
+            spy_ratio = spy_by_date[d] / spy_anchor
+        out.append(CompareEquityPoint(date=d, runs=runs_payload, spy_ratio=spy_ratio))
+    return out
 
 
 @router.get("/runs", response_model=list[BacktestRunOut])
@@ -194,6 +456,7 @@ def create_run(payload: BacktestRunIn, background_tasks: BackgroundTasks) -> Bac
             start_date=payload.start_date,
             end_date=payload.end_date,
             symbols=payload.symbols,
+            use_real_chain=sp.use_real_chain,
             params=StrategyParams(
                 starting_capital=sp.starting_capital,
                 max_concurrent_positions=sp.max_concurrent_positions,
@@ -384,10 +647,12 @@ def _run_strategy_in_background(
     start_date: DateType,
     end_date: DateType,
     symbols: list[str] | None,
+    use_real_chain: bool,
     params: StrategyParams,
 ) -> None:
     with get_session() as session:
         try:
+            pricer = RealChainPricer(session) if use_real_chain else None
             run_strategy_backtest(
                 session,
                 config_id=config_id,
@@ -396,6 +661,7 @@ def _run_strategy_in_background(
                 params=params,
                 symbols=symbols,
                 existing_run_id=run_id,
+                pricer=pricer,
             )
         except Exception:
             log.exception("backtest.background.strategy.failed", run_id=run_id)
@@ -414,6 +680,7 @@ def _build_run_out(session: Session, run: BacktestRun) -> BacktestRunOut:
     win_rate = mean_return_pct = median_return_pct = None
     final_equity = total_return_pct = None
     cycles_completed: int | None = None
+    metrics_payload: dict[str, float | int | None] | None = None
 
     if run.mode == MODE_FILTER:
         returns = [t.realized_pnl / 100.0 for t in trades if t.realized_pnl is not None]
@@ -436,6 +703,7 @@ def _build_run_out(session: Session, run: BacktestRun) -> BacktestRunOut:
                     (final_equity - run.starting_capital) / run.starting_capital * 100.0
                 )
         cycles_completed = _count_completed_cycles(trades)
+        metrics_payload = _resolve_metrics_payload(session, run, trades)
 
     return BacktestRunOut(
         id=run.id,
@@ -456,7 +724,45 @@ def _build_run_out(session: Session, run: BacktestRun) -> BacktestRunOut:
         final_equity=final_equity,
         total_return_pct=total_return_pct,
         cycles_completed=cycles_completed,
+        metrics=metrics_payload,
     )
+
+
+def _resolve_metrics_payload(
+    session: Session,
+    run: BacktestRun,
+    trades: Sequence[BacktestTrade],
+) -> dict[str, float | int | None] | None:
+    """Return persisted metrics, or backfill them once for older runs.
+
+    Strategy runs created before the ``metrics_json`` column existed don't
+    have a payload; compute it from their persisted trades + equity series
+    on first read and cache it back to the row so subsequent reads are
+    free.
+    """
+    if run.metrics_json:
+        return run.metrics_json
+    if run.status != STATUS_COMPLETED:
+        return None
+    from backtest.metrics import compute_strategy_metrics  # lazy
+
+    equity_rows = session.execute(
+        select(BacktestEquity.date, BacktestEquity.equity)
+        .where(BacktestEquity.run_id == run.id)
+        .order_by(BacktestEquity.date)
+    ).all()
+    if not equity_rows:
+        return None
+    risk_free = float((run.params_json or {}).get("risk_free_rate", 0.0))
+    metrics = compute_strategy_metrics(
+        equity_series=[(row[0], float(row[1])) for row in equity_rows],
+        trades=trades,
+        risk_free_rate=risk_free,
+    )
+    payload = metrics.to_dict()
+    run.metrics_json = payload
+    session.commit()
+    return payload
 
 
 def _count_completed_cycles(trades: Sequence[BacktestTrade]) -> int:

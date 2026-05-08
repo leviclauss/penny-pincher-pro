@@ -112,13 +112,15 @@ def _parse_date(_ctx: click.Context, _param: click.Parameter, value: str) -> dat
     help="(strategy mode) Per-share slippage cost on each option fill.",
 )
 @click.option(
-    "--use-real-chain",
+    "--no-real-chain",
+    "no_real_chain",
     is_flag=True,
     default=False,
     help=(
-        "(strategy mode) Use options_historical for pricing + strike selection "
-        "instead of synthetic Black-Scholes against a sigma estimate. Requires "
-        "an options-history backfill (see ingestion/options_history.py)."
+        "(strategy mode) Force the synthetic Black-Scholes pricer instead of "
+        "the default RealChainPricer (which reads options_historical with a "
+        "synthetic per-row fallback). Use when you have no historical "
+        "backfill, or to compare synthetic vs real for one config."
     ),
 )
 @click.option(
@@ -148,7 +150,7 @@ def cli(
     manage_dte: int,
     fee_per_contract: float,
     slippage_per_share: float,
-    use_real_chain: bool,
+    no_real_chain: bool,
     hold_losers_to_expiry: bool,
 ) -> None:
     """Replay one screener config across history."""
@@ -186,7 +188,7 @@ def cli(
             symbols=symbol_list,
             calendar=calendar,
             params=params,
-            use_real_chain=use_real_chain,
+            use_real_chain=not no_real_chain,
         )
 
 

@@ -58,7 +58,8 @@ is assembled in `ingestion/macro.py` after the indicator step runs.
 - Powers two downstream features:
   - `python -m ingestion.iv_backfill` — seeds historical `iv_atm` so
     `iv_rank` / `iv_percentile` can be computed without waiting 126 days
-  - Strategy backtest `--use-real-chain` (`backend/backtest/pricing.py::RealChainPricer`)
+  - Strategy backtest's default `RealChainPricer` (`backend/backtest/pricing.py`); pass
+    `--no-real-chain` to force pure synthetic pricing instead.
 
 Polygon is the only provider in this stack with a paid-tier dependency for a
 shipped feature (real-chain backtesting). If you drop Polygon, that mode
@@ -138,7 +139,7 @@ Each step writes a `job_runs` row via `scheduler.context.job_run()`.
 |---|---|---|
 | Alpaca | Bars step fails → entire pipeline halts (everything reads from `bars_daily`) | Nothing — bars are load-bearing |
 | Polygon (with `OPTIONS_PROVIDER=polygon`) | Pipeline auto-falls back to Alpaca options (no volume/OI) | Bars, IV, earnings, macro |
-| Polygon (historical backfill) | `iv_backfill` and `--use-real-chain` backtests unavailable | Daily pipeline (current chains only) |
+| Polygon (historical backfill) | `iv_backfill` blocked; strategy backtests still run but `RealChainPricer` falls back to synthetic per-row | Daily pipeline (current chains only) |
 | Finnhub | Earnings step no-ops; earnings filters silently never fire; sector/market_cap stay NULL on new tickers | Bars, options, IV, macro |
 | Yahoo | Macro VIX columns stay NULL; dashboard regime pill goes stale | Everything else; SPY-side macro keeps working |
 

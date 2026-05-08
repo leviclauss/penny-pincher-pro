@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import {
   ChevronDown,
   ChevronUp,
   Download,
   FlaskConical,
+  GitCompareArrows,
   Loader2,
   Play,
   Trash2,
@@ -13,6 +15,7 @@ import {
   ApiError,
   backtestTradesCsvUrl,
   deleteBacktestRun,
+  fetchBacktestCoverage,
   fetchBacktestEquity,
   fetchBacktestRun,
   fetchBacktestRuns,
@@ -21,6 +24,7 @@ import {
   runBacktest,
 } from "@/api/client";
 import type {
+  BacktestCoverageOut,
   BacktestMode,
   BacktestRunIn,
   BacktestRunOut,
@@ -28,7 +32,7 @@ import type {
   StrategyParamsIn,
 } from "@/api/types";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonVariants } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
@@ -47,7 +51,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
+import { DrawdownChart } from "@/components/charts/DrawdownChart";
 import { EquityChart } from "@/components/charts/EquityChart";
+import { ReturnHistogram } from "@/components/charts/ReturnHistogram";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { BacktestTradeOut } from "@/api/types";
@@ -133,6 +139,59 @@ function StrategyEquityPanel({
       <EquityChart points={data} startingCapital={startingCapital} />
     </div>
   );
+}
+
+function DrawdownPanel({ runId }: { runId: number }): JSX.Element {
+  // Reuse the same query key as StrategyEquityPanel — TanStack dedupes the
+  // network call when both panels render together.
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["backtest-equity", runId],
+    queryFn: () => fetchBacktestEquity(runId),
+  });
+  if (isLoading) {
+    return (
+      <div className="text-muted-foreground flex items-center gap-2 px-1 py-3 text-sm">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
+  if (isError || !data) {
+    return (
+      <div className="text-destructive px-1 py-3 text-sm">
+        Failed to load equity series.
+      </div>
+    );
+  }
+  return <DrawdownChart points={data} />;
+}
+
+function ReturnDistributionPanel({ runId }: { runId: number }): JSX.Element {
+  // Reuse the trades query — TradeDetail already populates this cache, so
+  // by the time the panel renders we typically read straight from cache.
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["backtest-trades", runId],
+    queryFn: () => fetchBacktestTrades(runId),
+  });
+  if (isLoading) {
+    return (
+      <div className="text-muted-foreground flex items-center gap-2 px-1 py-3 text-sm">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
+  if (isError || !data) {
+    return (
+      <div className="text-destructive px-1 py-3 text-sm">
+        Failed to load trades.
+      </div>
+    );
+  }
+  // One bar per closed trade with a realized $ P&L. Open trades and
+  // legs without a realized P&L (csp_open, cc_open) are excluded.
+  const values = data
+    .filter((t) => t.realized_pnl != null)
+    .map((t) => t.realized_pnl as number);
+  return <ReturnHistogram values={values} />;
 }
 
 const STRATEGY_LEG_TYPES = [
@@ -805,13 +864,29 @@ function ExpandedRunDetail({ run }: { run: BacktestRunOut }): JSX.Element {
         </div>
       )}
       {current.mode === "strategy" && current.status !== "running" && (
-        <div>
-          <h3 className="mb-2 text-sm font-semibold">Equity curve</h3>
-          <StrategyEquityPanel
-            runId={current.id}
-            startingCapital={current.starting_capital}
-          />
-        </div>
+        <>
+          <div>
+            <h3 className="mb-2 text-sm font-semibold">Equity curve</h3>
+            <StrategyEquityPanel
+              runId={current.id}
+              startingCapital={current.starting_capital}
+            />
+          </div>
+          {current.status === "completed" && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <h3 className="mb-2 text-sm font-semibold">Underwater (drawdown)</h3>
+                <DrawdownPanel runId={current.id} />
+              </div>
+              <div>
+                <h3 className="mb-2 text-sm font-semibold">
+                  Per-cycle realized P&L distribution
+                </h3>
+                <ReturnDistributionPanel runId={current.id} />
+              </div>
+            </div>
+          )}
+        </>
       )}
       {current.status === "running" ? (
         <div className="text-muted-foreground flex items-center gap-2 text-sm">
@@ -872,9 +947,17 @@ function useRunRowState(run: BacktestRunOut) {
   return { current, del, headlineReturn, headlineRight };
 }
 
-function RunRow({ run }: { run: BacktestRunOut }): JSX.Element {
+function RunRow({
+  run,
+  selection,
+}: {
+  run: BacktestRunOut;
+  selection: SelectionApi;
+}): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const { current, del, headlineReturn, headlineRight } = useRunRowState(run);
+  const selectable = selection.isSelectable(current);
+  const checked = selection.isSelected(current.id);
 
   return (
     <>
@@ -882,6 +965,16 @@ function RunRow({ run }: { run: BacktestRunOut }): JSX.Element {
         className="cursor-pointer select-none"
         onClick={() => setExpanded((v) => !v)}
       >
+        <TableCell className="w-9 pr-0" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            aria-label={`Select run ${current.id} for comparison`}
+            disabled={!selectable && !checked}
+            checked={checked}
+            onChange={(e) => selection.toggle(current.id, e.target.checked)}
+            className="h-4 w-4 cursor-pointer accent-primary"
+          />
+        </TableCell>
         <TableCell>
           <ModeBadge mode={current.mode} />
         </TableCell>
@@ -946,13 +1039,21 @@ function RunRow({ run }: { run: BacktestRunOut }): JSX.Element {
       </TableRow>
       {expanded && (
         <TableRow>
-          <TableCell colSpan={9} className="bg-muted/30 p-0">
+          <TableCell colSpan={10} className="bg-muted/30 p-0">
             <ExpandedRunDetail run={current} />
           </TableCell>
         </TableRow>
       )}
     </>
   );
+}
+
+interface SelectionApi {
+  isSelected: (id: number) => boolean;
+  isSelectable: (run: BacktestRunOut) => boolean;
+  toggle: (id: number, next: boolean) => void;
+  selectedIds: number[];
+  max: number;
 }
 
 function RunMobileCard({ run }: { run: BacktestRunOut }): JSX.Element {
@@ -1050,6 +1151,8 @@ function RunMobileCard({ run }: { run: BacktestRunOut }): JSX.Element {
   );
 }
 
+const COMPARE_MAX_RUNS = 3;
+
 function RunsCard(): JSX.Element {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["backtest-runs"],
@@ -1064,10 +1167,77 @@ function RunsCard(): JSX.Element {
     },
   });
 
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+
+  const validRuns = useMemo(() => {
+    if (!data) return new Map<number, BacktestRunOut>();
+    return new Map(
+      data
+        .filter((r) => r.mode === "strategy" && r.status === "completed")
+        .map((r) => [r.id, r]),
+    );
+  }, [data]);
+
+  // Drop selections when the underlying run is gone (deleted, mode changed
+  // upstream, etc.) so the toolbar doesn't lie about what will be sent.
+  const effectiveSelection = useMemo(
+    () => selectedIds.filter((id) => validRuns.has(id)),
+    [selectedIds, validRuns],
+  );
+
+  const selectionApi: SelectionApi = useMemo(
+    () => ({
+      max: COMPARE_MAX_RUNS,
+      selectedIds: effectiveSelection,
+      isSelected: (id) => effectiveSelection.includes(id),
+      isSelectable: (run) =>
+        run.mode === "strategy" && run.status === "completed",
+      toggle: (id, next) => {
+        setSelectedIds((prev) => {
+          if (next) {
+            if (prev.includes(id)) return prev;
+            if (prev.length >= COMPARE_MAX_RUNS) return prev;
+            return [...prev, id];
+          }
+          return prev.filter((x) => x !== id);
+        });
+      },
+    }),
+    [effectiveSelection],
+  );
+
+  const compareHref =
+    effectiveSelection.length >= 2
+      ? `/backtest/compare?ids=${effectiveSelection.join(",")}`
+      : null;
+
   return (
     <Card>
       <CardHeader className="px-3 sm:px-5">
-        <CardTitle>Past runs</CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle>Past runs</CardTitle>
+          <div className="flex items-center gap-3">
+            {effectiveSelection.length > 0 && (
+              <span className="text-muted-foreground text-xs">
+                {effectiveSelection.length} of {COMPARE_MAX_RUNS} selected
+              </span>
+            )}
+            {compareHref ? (
+              <Link
+                to={compareHref}
+                className={buttonVariants({ variant: "default", size: "sm" })}
+              >
+                <GitCompareArrows className="mr-2 h-3.5 w-3.5" />
+                Compare selected
+              </Link>
+            ) : (
+              <Button size="sm" variant="secondary" disabled>
+                <GitCompareArrows className="mr-2 h-3.5 w-3.5" />
+                Compare selected
+              </Button>
+            )}
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="px-0">
         {isLoading ? (
@@ -1094,6 +1264,7 @@ function RunsCard(): JSX.Element {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-9"></TableHead>
                     <TableHead>Mode</TableHead>
                     <TableHead>Config</TableHead>
                     <TableHead>Period</TableHead>
@@ -1107,7 +1278,7 @@ function RunsCard(): JSX.Element {
                 </TableHeader>
                 <TableBody>
                   {data.map((run) => (
-                    <RunRow key={run.id} run={run} />
+                    <RunRow key={run.id} run={run} selection={selectionApi} />
                   ))}
                 </TableBody>
               </Table>
@@ -1150,6 +1321,70 @@ function strategyDefaultsAsForm(): StrategyFormState {
   return out;
 }
 
+const COVERAGE_OK_THRESHOLD = 0.95;
+
+function CoverageBanner({
+  coverage,
+}: {
+  coverage: BacktestCoverageOut;
+}): JSX.Element | null {
+  if (coverage.symbol_day_pairs_expected === 0) return null;
+
+  const pct = coverage.coverage_pct;
+  const ok = pct >= COVERAGE_OK_THRESHOLD;
+  const pctText = `${(pct * 100).toFixed(0)}%`;
+  const missingCount = coverage.symbols_missing.length;
+
+  if (ok && missingCount === 0) {
+    return (
+      <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
+        Real-chain coverage: {pctText} of (symbol × trading-day) pairs.
+      </p>
+    );
+  }
+
+  const sampleMissing = coverage.symbols_missing.slice(0, 5).join(", ");
+  const moreSuffix =
+    missingCount > 5 ? ` (+${missingCount - 5} more)` : "";
+  return (
+    <div
+      className={cn(
+        "mt-2 rounded-md border px-3 py-2 text-xs",
+        "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200",
+      )}
+    >
+      <p className="font-medium">
+        Partial real-chain coverage: {pctText} of (symbol × trading-day) pairs.
+      </p>
+      <p className="mt-1">
+        Missing days fall back to synthetic Black-Scholes pricing per-row.
+        {missingCount > 0 && (
+          <>
+            {" "}
+            {missingCount} symbol{missingCount === 1 ? "" : "s"} have no
+            historical chains in this window: {sampleMissing}
+            {moreSuffix}.
+          </>
+        )}
+        {coverage.first_uncovered_day && (
+          <>
+            {" "}
+            First uncovered day: <code>{coverage.first_uncovered_day}</code>.
+          </>
+        )}
+      </p>
+      <p className="mt-1 text-muted-foreground">
+        Backfill with{" "}
+        <code>
+          python -m ingestion.options_history --start {coverage.start} --end{" "}
+          {coverage.end}
+        </code>
+        .
+      </p>
+    </div>
+  );
+}
+
 function RunLauncherCard(): JSX.Element {
   const qc = useQueryClient();
 
@@ -1168,7 +1403,38 @@ function RunLauncherCard(): JSX.Element {
     strategyDefaultsAsForm(),
   );
   const [holdLosersToExpiry, setHoldLosersToExpiry] = useState<boolean>(false);
+  const [useRealChain, setUseRealChain] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const symbolsForCoverage = useMemo<string[] | undefined>(() => {
+    const trimmed = symbols.trim();
+    if (!trimmed) return undefined;
+    const parsed = trimmed
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+    return parsed.length > 0 ? parsed : undefined;
+  }, [symbols]);
+
+  // Only query coverage when the form is filled out enough to be meaningful.
+  // Strategy mode only — filter mode doesn't read options_historical.
+  const coverageEnabled =
+    mode === "strategy" &&
+    useRealChain &&
+    !!startDate &&
+    !!endDate &&
+    endDate > startDate;
+  const coverageQuery = useQuery({
+    queryKey: ["backtest-coverage", startDate, endDate, symbolsForCoverage ?? null],
+    queryFn: () =>
+      fetchBacktestCoverage({
+        start: startDate,
+        end: endDate,
+        symbols: symbolsForCoverage,
+      }),
+    enabled: coverageEnabled,
+    staleTime: 30_000,
+  });
 
   const run = useMutation({
     mutationFn: (input: BacktestRunIn) => runBacktest(input),
@@ -1247,6 +1513,7 @@ function RunLauncherCard(): JSX.Element {
         return;
       }
       sp.hold_losers_to_expiry = holdLosersToExpiry;
+      sp.use_real_chain = useRealChain;
       payload.strategy_params = sp;
     }
 
@@ -1391,6 +1658,22 @@ function RunLauncherCard(): JSX.Element {
             </div>
             <div className="mt-4">
               <Checkbox
+                id="bt-sp-real-chain"
+                checked={useRealChain}
+                onChange={(e) => setUseRealChain(e.target.checked)}
+                label="Use real option chains (recommended)"
+              />
+              <p className="text-muted-foreground mt-1 text-xs">
+                Reads strike + price from <code>options_historical</code>; falls
+                back to synthetic Black-Scholes per-row when a strike is
+                missing. Uncheck to force pure synthetic pricing.
+              </p>
+              {useRealChain && coverageQuery.data && (
+                <CoverageBanner coverage={coverageQuery.data} />
+              )}
+            </div>
+            <div className="mt-4">
+              <Checkbox
                 id="bt-sp-hold-losers"
                 checked={holdLosersToExpiry}
                 onChange={(e) => setHoldLosersToExpiry(e.target.checked)}
@@ -1416,8 +1699,10 @@ function RunLauncherCard(): JSX.Element {
           </Button>
           {mode === "strategy" && (
             <p className="text-muted-foreground text-xs">
-              Strategy runs simulate the wheel day-by-day with synthetic
-              Black-Scholes pricing. Long windows take a minute.
+              Strategy runs simulate the wheel day-by-day. Real option chains
+              from <code>options_historical</code> are used when available
+              (synthetic Black-Scholes per-row fallback). Long windows take a
+              minute.
             </p>
           )}
         </div>

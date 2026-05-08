@@ -4,6 +4,8 @@ import type {
   AlertPreference,
   AlertPreferenceUpdate,
   AssignInput,
+  BacktestCompareOut,
+  BacktestCoverageOut,
   BacktestEquityPoint,
   BacktestRunIn,
   BacktestRunOut,
@@ -459,4 +461,21 @@ export function deleteBacktestRun(runId: number): Promise<void> {
 
 export function backtestTradesCsvUrl(runId: number): string {
   return `/api/backtest/runs/${runId}/trades.csv`;
+}
+
+export function fetchBacktestCoverage(params: {
+  start: string;
+  end: string;
+  symbols?: string[];
+}): Promise<BacktestCoverageOut> {
+  const qs = new URLSearchParams({ start: params.start, end: params.end });
+  if (params.symbols && params.symbols.length > 0) {
+    qs.set("symbols", params.symbols.join(","));
+  }
+  return getJson<BacktestCoverageOut>(`/api/backtest/coverage?${qs.toString()}`);
+}
+
+export function fetchBacktestCompare(runIds: number[]): Promise<BacktestCompareOut> {
+  const qs = new URLSearchParams({ ids: runIds.join(",") });
+  return getJson<BacktestCompareOut>(`/api/backtest/runs/compare?${qs.toString()}`);
 }
