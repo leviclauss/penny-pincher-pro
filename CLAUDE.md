@@ -306,6 +306,46 @@ in the payload*.
 
 Keep CI green. If a check fails on `main`, that's the next thing to fix.
 
+## Pull request format
+
+Every PR Claude opens in this repo uses the same four-section body so the
+project history stays scannable. Don't paraphrase the headings or drop
+sections — if a section doesn't apply, write "None" under it rather than
+omitting it.
+
+```markdown
+## Summary
+
+<2–4 sentences. What was broken or missing, and what this PR does about
+it. Focus on the *why*, not the diff.>
+
+## Key changes
+
+- **`path/to/file.py`** — what changed and why, one bullet per logical
+  change. Group by file or by subsystem, whichever reads cleaner.
+- **`other/file.ts`** — …
+
+## Test plan
+
+- [ ] `make lint` + `make typecheck` + `make test` (or the frontend
+  equivalents) green.
+- [ ] <Manual checks the reviewer should run — CLI invocations, UI
+  flows, specific assertions. Be concrete: paste the command and the
+  expected output shape.>
+- [ ] <Edge cases / regression checks worth eyeballing.>
+
+https://claude.ai/code/session_<id>
+```
+
+Rules:
+
+- Title is a conventional-commits one-liner (`fix(scope): …`,
+  `feat(scope): …`, etc.) under 70 characters — same shape as commit
+  messages.
+- The session-link footer is mandatory and always last.
+- Don't add a "Generated with Claude" credit, emoji, or any other
+  decoration.
+
 ## Out-of-scope tripwires
 
 These are intentionally unbuilt and should not creep in without
