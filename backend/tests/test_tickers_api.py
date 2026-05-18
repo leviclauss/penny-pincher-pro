@@ -92,6 +92,31 @@ def test_list_tickers_empty(client: TestClient) -> None:
     assert resp.json() == []
 
 
+def test_list_sectors_returns_distinct_non_null_sorted(client: TestClient) -> None:
+    from db import get_session
+    from db.models.market import Ticker
+
+    with get_session() as session:
+        session.add_all(
+            [
+                Ticker(symbol="AAPL", name="Apple", sector="Technology", is_active=True),
+                Ticker(symbol="MSFT", name="Microsoft", sector="Technology", is_active=True),
+                Ticker(symbol="XOM", name="Exxon", sector="Energy", is_active=True),
+                Ticker(symbol="SPY", name="SPY ETF", sector=None, is_active=True),
+            ]
+        )
+
+    resp = client.get("/api/tickers/sectors")
+    assert resp.status_code == 200
+    assert resp.json() == ["Energy", "Technology"]
+
+
+def test_list_sectors_empty_when_no_tickers(client: TestClient) -> None:
+    resp = client.get("/api/tickers/sectors")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
 def test_list_tickers_with_data(client: TestClient) -> None:
     _seed_basic(client)
     resp = client.get("/api/tickers")

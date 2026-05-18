@@ -136,13 +136,19 @@ export interface ScreenerConfigDetail extends ScreenerConfigSummary {
   config_json: Record<string, unknown>;
 }
 
-export type FilterParamKind = "number" | "integer" | "percent" | "currency" | "tier_set";
+export type FilterParamKind =
+  | "number"
+  | "integer"
+  | "percent"
+  | "currency"
+  | "tier_set"
+  | "sector_set";
 
 export interface FilterParamSchema {
   name: string;
   label: string;
   kind: FilterParamKind;
-  default: number | number[];
+  default: number | number[] | string[];
   min: number | null;
   max: number | null;
   step: number | null;

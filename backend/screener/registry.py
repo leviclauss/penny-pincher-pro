@@ -33,6 +33,7 @@ FILTER_REGISTRY: dict[str, type[Filter]] = {
     event.NoEarningsInWindow.id: event.NoEarningsInWindow,
     event.MinMarketCap.id: event.MinMarketCap,
     event.TierAllowed.id: event.TierAllowed,
+    event.SectorAllowed.id: event.SectorAllowed,
     # Tier 5 — Wheel Economics
     economics.PremiumEconomics.id: economics.PremiumEconomics,
 }

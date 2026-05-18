@@ -251,6 +251,12 @@ def test_filter_catalog_serializes_param_schema(client: TestClient) -> None:
     assert tier_param["kind"] == "tier_set"
     assert tier_param["default"] == [1, 2]
 
+    # sector_set defaults to an empty list (no restriction).
+    sector_allowed = by_id["sector_allowed"]
+    [sector_param] = sector_allowed["params"]
+    assert sector_param["kind"] == "sector_set"
+    assert sector_param["default"] == []
+
 
 def test_filter_catalog_lists_paramless_filters(client: TestClient) -> None:
     body = client.get("/api/screener/filters").json()

@@ -71,3 +71,30 @@ def test_tier_allowed_fail() -> None:
 def test_tier_allowed_ineligible_without_tier() -> None:
     ctx = make_context(ticker=make_ticker(tier=None))
     assert event.TierAllowed().evaluate(ctx, {}).eligible is False
+
+
+def test_sector_allowed_empty_list_passes_everything() -> None:
+    ctx = make_context(ticker=make_ticker(sector="Technology"))
+    r = event.SectorAllowed().evaluate(ctx, {"sectors": []})
+    assert r.passed is True
+    assert r.eligible is True
+
+
+def test_sector_allowed_pass_when_in_set() -> None:
+    ctx = make_context(ticker=make_ticker(sector="Technology"))
+    r = event.SectorAllowed().evaluate(ctx, {"sectors": ["Technology", "Health Care"]})
+    assert r.passed is True
+    assert r.value == "Technology"
+
+
+def test_sector_allowed_fail_when_not_in_set() -> None:
+    ctx = make_context(ticker=make_ticker(sector="Energy"))
+    r = event.SectorAllowed().evaluate(ctx, {"sectors": ["Technology", "Health Care"]})
+    assert r.passed is False
+
+
+def test_sector_allowed_ineligible_when_sector_missing() -> None:
+    ctx = make_context(ticker=make_ticker(sector=None))
+    r = event.SectorAllowed().evaluate(ctx, {"sectors": ["Technology"]})
+    assert r.eligible is False
+    assert r.reason == "missing_sector"

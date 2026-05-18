@@ -41,7 +41,7 @@ class FilterParamSchemaOut(BaseModel):
     name: str
     label: str
     kind: str
-    default: float | int | list[int]
+    default: float | int | list[int] | list[str]
     min: float | None = None
     max: float | None = None
     step: float | None = None
@@ -487,11 +487,19 @@ def _check_param_value(filter_id: str, spec: ParamSpec, value: Any) -> None:
                 detail=f"filter {filter_id}.{spec.name}: must be list[int]",
             )
         for v in value:
-            if v not in (1, 2, 3):
+            if v not in (1, 2, 3, 4):
                 raise HTTPException(
                     status_code=400,
-                    detail=f"filter {filter_id}.{spec.name}: tier {v} not in [1, 2, 3]",
+                    detail=f"filter {filter_id}.{spec.name}: tier {v} not in [1, 2, 3, 4]",
                 )
+        return
+
+    if spec.kind == "sector_set":
+        if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
+            raise HTTPException(
+                status_code=400,
+                detail=f"filter {filter_id}.{spec.name}: must be list[str]",
+            )
         return
 
     if spec.kind == "integer":

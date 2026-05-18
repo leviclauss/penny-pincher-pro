@@ -24,7 +24,7 @@ from db.models.market import Ticker
 from ingestion.options_client import OptionSnapshotRecord
 
 FilterCategory: TypeAlias = Literal["trend", "volatility", "liquidity", "event"]
-ParamKind: TypeAlias = Literal["number", "integer", "percent", "currency", "tier_set"]
+ParamKind: TypeAlias = Literal["number", "integer", "percent", "currency", "tier_set", "sector_set"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,15 +33,17 @@ class ParamSpec:
 
     Drives the config-editor UI: ``kind`` picks the input control
     (``percent`` is a fractional float displayed as %; ``currency`` is
-    USD; ``tier_set`` is a multi-select over allowed ticker tiers).
-    ``default`` mirrors the constant the filter actually consumes so UI
-    defaults can never drift from runtime defaults.
+    USD; ``tier_set`` is a multi-select over allowed ticker tiers;
+    ``sector_set`` is a multi-select over GICS sector strings populated
+    from the tickers table).  ``default`` mirrors the constant the filter
+    actually consumes so UI defaults can never drift from runtime
+    defaults.
     """
 
     name: str
     label: str
     kind: ParamKind
-    default: float | int | tuple[int, ...]
+    default: float | int | tuple[int, ...] | tuple[str, ...]
     min: float | None = None
     max: float | None = None
     step: float | None = None

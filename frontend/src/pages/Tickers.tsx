@@ -125,6 +125,7 @@ const TIER_PALETTE: Record<number, string> = {
   1: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
   2: "bg-sky-500/15 text-sky-300 ring-sky-500/30",
   3: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
+  4: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
 };
 
 function tierSelectClasses(tier: number | null): string {
@@ -156,8 +157,38 @@ function TierSelect({ tier, onChange }: TierSelectProps): JSX.Element {
       <option value="1">T1</option>
       <option value="2">T2</option>
       <option value="3">T3</option>
+      <option value="4">T4</option>
     </select>
   );
+}
+
+const HIDDEN_SECTORS_STORAGE_KEY = "tickers.hiddenSectors";
+
+function readHiddenSectors(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(HIDDEN_SECTORS_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter((s): s is string => typeof s === "string"));
+    }
+  } catch {
+    /* ignore */
+  }
+  return new Set();
+}
+
+function writeHiddenSectors(sectors: Set<string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      HIDDEN_SECTORS_STORAGE_KEY,
+      JSON.stringify(Array.from(sectors).sort()),
+    );
+  } catch {
+    /* ignore */
+  }
 }
 
 export function Tickers(): JSX.Element {
@@ -166,6 +197,9 @@ export function Tickers(): JSX.Element {
   const [showHidden, setShowHidden] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<TickerSummary | null>(null);
+  const [hiddenSectors, setHiddenSectors] = useState<Set<string>>(() =>
+    readHiddenSectors(),
+  );
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -173,6 +207,30 @@ export function Tickers(): JSX.Element {
     queryKey: ["tickers", { includeHidden: showHidden }],
     queryFn: () => fetchTickers(showHidden),
   });
+
+  useEffect(() => {
+    writeHiddenSectors(hiddenSectors);
+  }, [hiddenSectors]);
+
+  const allSectors = useMemo(() => {
+    if (!data) return [] as string[];
+    const set = new Set<string>();
+    for (const t of data) {
+      if (t.sector) set.add(t.sector);
+    }
+    return Array.from(set).sort();
+  }, [data]);
+
+  const toggleSector = (sector: string): void => {
+    setHiddenSectors((prev) => {
+      const next = new Set(prev);
+      if (next.has(sector)) next.delete(sector);
+      else next.add(sector);
+      return next;
+    });
+  };
+
+  const clearSectorFilter = (): void => setHiddenSectors(new Set());
 
   const anyRunning = useBackfillPolling();
 
@@ -198,13 +256,15 @@ export function Tickers(): JSX.Element {
 
   const sorted = useMemo(() => {
     if (!data) return [];
-    const out = [...data];
-    out.sort((a, b) => {
+    const filtered = data.filter(
+      (t) => !(t.sector !== null && hiddenSectors.has(t.sector)),
+    );
+    filtered.sort((a, b) => {
       const cmp = compareValues(getSortValue(a, sortKey), getSortValue(b, sortKey));
       return sortDir === "asc" ? cmp : -cmp;
     });
-    return out;
-  }, [data, sortKey, sortDir]);
+    return filtered;
+  }, [data, sortKey, sortDir, hiddenSectors]);
 
   const toggleSort = (key: SortKey): void => {
     if (key === sortKey) {
@@ -247,7 +307,11 @@ export function Tickers(): JSX.Element {
                 onChange={(e) => setShowHidden(e.target.checked)}
               />
               <span className="text-muted-foreground text-xs">
-                {data ? `${data.length} symbols` : "—"}
+                {data
+                  ? sorted.length === data.length
+                    ? `${data.length} symbols`
+                    : `${sorted.length}/${data.length} symbols`
+                  : "—"}
               </span>
               <Button size="sm" onClick={() => setAddOpen(true)}>
                 <Plus className="mr-1 h-4 w-4" />
@@ -255,6 +319,14 @@ export function Tickers(): JSX.Element {
               </Button>
             </div>
           </div>
+          {allSectors.length > 0 && (
+            <SectorChipBar
+              sectors={allSectors}
+              hidden={hiddenSectors}
+              onToggle={toggleSector}
+              onClear={clearSectorFilter}
+            />
+          )}
         </CardHeader>
         <CardContent className="px-3 pb-3 sm:px-5 sm:pb-5">
           {isLoading && <div className="text-muted-foreground text-sm">Loading…</div>}
@@ -448,6 +520,56 @@ export function Tickers(): JSX.Element {
         }
         pendingDelete={deleteMutation.isPending}
       />
+    </div>
+  );
+}
+
+interface SectorChipBarProps {
+  sectors: string[];
+  hidden: Set<string>;
+  onToggle: (sector: string) => void;
+  onClear: () => void;
+}
+
+function SectorChipBar({
+  sectors,
+  hidden,
+  onToggle,
+  onClear,
+}: SectorChipBarProps): JSX.Element {
+  return (
+    <div className="border-border/50 mt-3 flex flex-wrap items-center gap-1.5 border-t pt-3">
+      <span className="text-muted-foreground mr-1 text-xs font-semibold uppercase tracking-wider">
+        Sectors
+      </span>
+      {sectors.map((s) => {
+        const isHidden = hidden.has(s);
+        return (
+          <button
+            key={s}
+            type="button"
+            onClick={() => onToggle(s)}
+            title={isHidden ? "Click to show" : "Click to hide"}
+            className={cn(
+              "border-border rounded-full border px-2.5 py-0.5 text-[10px] font-semibold transition-colors",
+              isHidden
+                ? "text-muted-foreground/60 line-through hover:bg-accent"
+                : "border-primary/50 bg-primary/10 text-primary-foreground",
+            )}
+          >
+            {s}
+          </button>
+        );
+      })}
+      {hidden.size > 0 && (
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-muted-foreground hover:text-foreground ml-1 text-[10px] underline"
+        >
+          Clear ({hidden.size})
+        </button>
+      )}
     </div>
   );
 }

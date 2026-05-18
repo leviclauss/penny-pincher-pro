@@ -1,0 +1,1606 @@
+[
+  {
+    "symbol": "AAN",
+    "tier": 3
+  },
+  {
+    "symbol": "ACHC",
+    "tier": 3
+  },
+  {
+    "symbol": "ACIW",
+    "tier": 3
+  },
+  {
+    "symbol": "ADNT",
+    "tier": 3
+  },
+  {
+    "symbol": "ATGE",
+    "tier": 3
+  },
+  {
+    "symbol": "ACM",
+    "tier": 3
+  },
+  {
+    "symbol": "AMG",
+    "tier": 3
+  },
+  {
+    "symbol": "ACC",
+    "tier": 3
+  },
+  {
+    "symbol": "AEO",
+    "tier": 3
+  },
+  {
+    "symbol": "AFG",
+    "tier": 3
+  },
+  {
+    "symbol": "AGCO",
+    "tier": 3
+  },
+  {
+    "symbol": "AKRX",
+    "tier": 3
+  },
+  {
+    "symbol": "ALE",
+    "tier": 3
+  },
+  {
+    "symbol": "ALEX",
+    "tier": 3
+  },
+  {
+    "symbol": "AMED",
+    "tier": 3
+  },
+  {
+    "symbol": "AM",
+    "tier": 3
+  },
+  {
+    "symbol": "APY",
+    "tier": 3
+  },
+  {
+    "symbol": "ATI",
+    "tier": 3
+  },
+  {
+    "symbol": "AMCX",
+    "tier": 3
+  },
+  {
+    "symbol": "AN",
+    "tier": 3
+  },
+  {
+    "symbol": "ARW",
+    "tier": 3
+  },
+  {
+    "symbol": "ARWR",
+    "tier": 3
+  },
+  {
+    "symbol": "ASB",
+    "tier": 3
+  },
+  {
+    "symbol": "ASGN",
+    "tier": 3
+  },
+  {
+    "symbol": "ASH",
+    "tier": 3
+  },
+  {
+    "symbol": "ATO",
+    "tier": 3
+  },
+  {
+    "symbol": "ATR",
+    "tier": 3
+  },
+  {
+    "symbol": "AVNS",
+    "tier": 3
+  },
+  {
+    "symbol": "AVT",
+    "tier": 3
+  },
+  {
+    "symbol": "AYI",
+    "tier": 3
+  },
+  {
+    "symbol": "AAXN",
+    "tier": 3
+  },
+  {
+    "symbol": "BBBY",
+    "tier": 3
+  },
+  {
+    "symbol": "BC",
+    "tier": 3
+  },
+  {
+    "symbol": "BCO",
+    "tier": 3
+  },
+  {
+    "symbol": "BDC",
+    "tier": 3
+  },
+  {
+    "symbol": "BID",
+    "tier": 3
+  },
+  {
+    "symbol": "BIO",
+    "tier": 3
+  },
+  {
+    "symbol": "BJ",
+    "tier": 3
+  },
+  {
+    "symbol": "BKH",
+    "tier": 3
+  },
+  {
+    "symbol": "BLKB",
+    "tier": 3
+  },
+  {
+    "symbol": "BOH",
+    "tier": 3
+  },
+  {
+    "symbol": "BRO",
+    "tier": 3
+  },
+  {
+    "symbol": "BXS",
+    "tier": 3
+  },
+  {
+    "symbol": "BYD",
+    "tier": 3
+  },
+  {
+    "symbol": "BHF",
+    "tier": 3
+  },
+  {
+    "symbol": "BRX",
+    "tier": 3
+  },
+  {
+    "symbol": "CABO",
+    "tier": 3
+  },
+  {
+    "symbol": "CCMP",
+    "tier": 3
+  },
+  {
+    "symbol": "CZR",
+    "tier": 3
+  },
+  {
+    "symbol": "CAKE",
+    "tier": 3
+  },
+  {
+    "symbol": "CAR",
+    "tier": 3
+  },
+  {
+    "symbol": "CACI",
+    "tier": 3
+  },
+  {
+    "symbol": "CASY",
+    "tier": 3
+  },
+  {
+    "symbol": "CATY",
+    "tier": 3
+  },
+  {
+    "symbol": "CFX",
+    "tier": 3
+  },
+  {
+    "symbol": "CBSH",
+    "tier": 3
+  },
+  {
+    "symbol": "CBT",
+    "tier": 3
+  },
+  {
+    "symbol": "CDAY",
+    "tier": 3
+  },
+  {
+    "symbol": "CC",
+    "tier": 3
+  },
+  {
+    "symbol": "CDK",
+    "tier": 3
+  },
+  {
+    "symbol": "CFR",
+    "tier": 3
+  },
+  {
+    "symbol": "CGNX",
+    "tier": 3
+  },
+  {
+    "symbol": "CHE",
+    "tier": 3
+  },
+  {
+    "symbol": "CHH",
+    "tier": 3
+  },
+  {
+    "symbol": "CHDN",
+    "tier": 3
+  },
+  {
+    "symbol": "CHK",
+    "tier": 3
+  },
+  {
+    "symbol": "CIEN",
+    "tier": 3
+  },
+  {
+    "symbol": "CLB",
+    "tier": 3
+  },
+  {
+    "symbol": "CLGX",
+    "tier": 3
+  },
+  {
+    "symbol": "CLH",
+    "tier": 3
+  },
+  {
+    "symbol": "CLI",
+    "tier": 3
+  },
+  {
+    "symbol": "CMC",
+    "tier": 3
+  },
+  {
+    "symbol": "CMD",
+    "tier": 3
+  },
+  {
+    "symbol": "CMP",
+    "tier": 3
+  },
+  {
+    "symbol": "CNK",
+    "tier": 3
+  },
+  {
+    "symbol": "CNO",
+    "tier": 3
+  },
+  {
+    "symbol": "COHR",
+    "tier": 3
+  },
+  {
+    "symbol": "CONE",
+    "tier": 3
+  },
+  {
+    "symbol": "COR",
+    "tier": 3
+  },
+  {
+    "symbol": "CPT",
+    "tier": 3
+  },
+  {
+    "symbol": "CR",
+    "tier": 3
+  },
+  {
+    "symbol": "CREE",
+    "tier": 3
+  },
+  {
+    "symbol": "CRI",
+    "tier": 3
+  },
+  {
+    "symbol": "CRL",
+    "tier": 3
+  },
+  {
+    "symbol": "CRS",
+    "tier": 3
+  },
+  {
+    "symbol": "CRUS",
+    "tier": 3
+  },
+  {
+    "symbol": "CNX",
+    "tier": 3
+  },
+  {
+    "symbol": "CSL",
+    "tier": 3
+  },
+  {
+    "symbol": "CTLT",
+    "tier": 3
+  },
+  {
+    "symbol": "CUZ",
+    "tier": 3
+  },
+  {
+    "symbol": "CVLT",
+    "tier": 3
+  },
+  {
+    "symbol": "CXW",
+    "tier": 3
+  },
+  {
+    "symbol": "CW",
+    "tier": 3
+  },
+  {
+    "symbol": "CBRL",
+    "tier": 3
+  },
+  {
+    "symbol": "CY",
+    "tier": 3
+  },
+  {
+    "symbol": "DAN",
+    "tier": 3
+  },
+  {
+    "symbol": "DCI",
+    "tier": 3
+  },
+  {
+    "symbol": "DDS",
+    "tier": 3
+  },
+  {
+    "symbol": "DECK",
+    "tier": 3
+  },
+  {
+    "symbol": "DEI",
+    "tier": 3
+  },
+  {
+    "symbol": "DKS",
+    "tier": 3
+  },
+  {
+    "symbol": "DLPH",
+    "tier": 3
+  },
+  {
+    "symbol": "DLX",
+    "tier": 3
+  },
+  {
+    "symbol": "DNKN",
+    "tier": 3
+  },
+  {
+    "symbol": "DNOW",
+    "tier": 3
+  },
+  {
+    "symbol": "DPZ",
+    "tier": 3
+  },
+  {
+    "symbol": "DY",
+    "tier": 3
+  },
+  {
+    "symbol": "EAT",
+    "tier": 3
+  },
+  {
+    "symbol": "EGP",
+    "tier": 3
+  },
+  {
+    "symbol": "EHC",
+    "tier": 3
+  },
+  {
+    "symbol": "EME",
+    "tier": 3
+  },
+  {
+    "symbol": "ENR",
+    "tier": 3
+  },
+  {
+    "symbol": "ENS",
+    "tier": 3
+  },
+  {
+    "symbol": "EPC",
+    "tier": 3
+  },
+  {
+    "symbol": "EPR",
+    "tier": 3
+  },
+  {
+    "symbol": "EQT",
+    "tier": 3
+  },
+  {
+    "symbol": "ERI",
+    "tier": 3
+  },
+  {
+    "symbol": "ETRN",
+    "tier": 3
+  },
+  {
+    "symbol": "ETSY",
+    "tier": 3
+  },
+  {
+    "symbol": "EV",
+    "tier": 3
+  },
+  {
+    "symbol": "EVR",
+    "tier": 3
+  },
+  {
+    "symbol": "EWBC",
+    "tier": 3
+  },
+  {
+    "symbol": "EXEL",
+    "tier": 3
+  },
+  {
+    "symbol": "EXP",
+    "tier": 3
+  },
+  {
+    "symbol": "FAF",
+    "tier": 3
+  },
+  {
+    "symbol": "FDS",
+    "tier": 3
+  },
+  {
+    "symbol": "FCFS",
+    "tier": 3
+  },
+  {
+    "symbol": "FFIN",
+    "tier": 3
+  },
+  {
+    "symbol": "FHN",
+    "tier": 3
+  },
+  {
+    "symbol": "FICO",
+    "tier": 3
+  },
+  {
+    "symbol": "FII",
+    "tier": 3
+  },
+  {
+    "symbol": "FIVE",
+    "tier": 3
+  },
+  {
+    "symbol": "FLO",
+    "tier": 3
+  },
+  {
+    "symbol": "FLR",
+    "tier": 3
+  },
+  {
+    "symbol": "FR",
+    "tier": 3
+  },
+  {
+    "symbol": "FNB",
+    "tier": 3
+  },
+  {
+    "symbol": "FSLR",
+    "tier": 3
+  },
+  {
+    "symbol": "FL",
+    "tier": 3
+  },
+  {
+    "symbol": "INDUSTRIALS",
+    "tier": 3
+  },
+  {
+    "symbol": "FULT",
+    "tier": 3
+  },
+  {
+    "symbol": "GATX",
+    "tier": 3
+  },
+  {
+    "symbol": "GEF",
+    "tier": 3
+  },
+  {
+    "symbol": "GEO",
+    "tier": 3
+  },
+  {
+    "symbol": "GGG",
+    "tier": 3
+  },
+  {
+    "symbol": "LOPE",
+    "tier": 3
+  },
+  {
+    "symbol": "GHC",
+    "tier": 3
+  },
+  {
+    "symbol": "GME",
+    "tier": 3
+  },
+  {
+    "symbol": "GMED",
+    "tier": 3
+  },
+  {
+    "symbol": "GNTX",
+    "tier": 3
+  },
+  {
+    "symbol": "GNW",
+    "tier": 3
+  },
+  {
+    "symbol": "GT",
+    "tier": 3
+  },
+  {
+    "symbol": "GDOT",
+    "tier": 3
+  },
+  {
+    "symbol": "GRUB",
+    "tier": 3
+  },
+  {
+    "symbol": "GWR",
+    "tier": 3
+  },
+  {
+    "symbol": "HAE",
+    "tier": 3
+  },
+  {
+    "symbol": "HAIN",
+    "tier": 3
+  },
+  {
+    "symbol": "HWC",
+    "tier": 3
+  },
+  {
+    "symbol": "HCSG",
+    "tier": 3
+  },
+  {
+    "symbol": "HE",
+    "tier": 3
+  },
+  {
+    "symbol": "HELE",
+    "tier": 3
+  },
+  {
+    "symbol": "HIW",
+    "tier": 3
+  },
+  {
+    "symbol": "HNI",
+    "tier": 3
+  },
+  {
+    "symbol": "HOMB",
+    "tier": 3
+  },
+  {
+    "symbol": "HPT",
+    "tier": 3
+  },
+  {
+    "symbol": "HQY",
+    "tier": 3
+  },
+  {
+    "symbol": "HR",
+    "tier": 3
+  },
+  {
+    "symbol": "HRC",
+    "tier": 3
+  },
+  {
+    "symbol": "HUBB",
+    "tier": 3
+  },
+  {
+    "symbol": "ICUI",
+    "tier": 3
+  },
+  {
+    "symbol": "IDA",
+    "tier": 3
+  },
+  {
+    "symbol": "IIVI",
+    "tier": 3
+  },
+  {
+    "symbol": "NGVT",
+    "tier": 3
+  },
+  {
+    "symbol": "NSP",
+    "tier": 3
+  },
+  {
+    "symbol": "IART",
+    "tier": 3
+  },
+  {
+    "symbol": "IBKR",
+    "tier": 3
+  },
+  {
+    "symbol": "IBOC",
+    "tier": 3
+  },
+  {
+    "symbol": "IDCC",
+    "tier": 3
+  },
+  {
+    "symbol": "INGR",
+    "tier": 3
+  },
+  {
+    "symbol": "INT",
+    "tier": 3
+  },
+  {
+    "symbol": "ISCA",
+    "tier": 3
+  },
+  {
+    "symbol": "ITT",
+    "tier": 3
+  },
+  {
+    "symbol": "JACK",
+    "tier": 3
+  },
+  {
+    "symbol": "JBGS",
+    "tier": 3
+  },
+  {
+    "symbol": "JBL",
+    "tier": 3
+  },
+  {
+    "symbol": "JHG",
+    "tier": 3
+  },
+  {
+    "symbol": "JEF",
+    "tier": 3
+  },
+  {
+    "symbol": "JBLU",
+    "tier": 3
+  },
+  {
+    "symbol": "JCOM",
+    "tier": 3
+  },
+  {
+    "symbol": "JLL",
+    "tier": 3
+  },
+  {
+    "symbol": "JW.A",
+    "tier": 3
+  },
+  {
+    "symbol": "KAR",
+    "tier": 3
+  },
+  {
+    "symbol": "KBH",
+    "tier": 3
+  },
+  {
+    "symbol": "KBR",
+    "tier": 3
+  },
+  {
+    "symbol": "KEX",
+    "tier": 3
+  },
+  {
+    "symbol": "KMPR",
+    "tier": 3
+  },
+  {
+    "symbol": "KMT",
+    "tier": 3
+  },
+  {
+    "symbol": "KNX",
+    "tier": 3
+  },
+  {
+    "symbol": "KRC",
+    "tier": 3
+  },
+  {
+    "symbol": "LAMR",
+    "tier": 3
+  },
+  {
+    "symbol": "LANC",
+    "tier": 3
+  },
+  {
+    "symbol": "LEA",
+    "tier": 3
+  },
+  {
+    "symbol": "LGND",
+    "tier": 3
+  },
+  {
+    "symbol": "LECO",
+    "tier": 3
+  },
+  {
+    "symbol": "LFUS",
+    "tier": 3
+  },
+  {
+    "symbol": "LII",
+    "tier": 3
+  },
+  {
+    "symbol": "LITE",
+    "tier": 3
+  },
+  {
+    "symbol": "LIVN",
+    "tier": 3
+  },
+  {
+    "symbol": "RAMP",
+    "tier": 3
+  },
+  {
+    "symbol": "LM",
+    "tier": 3
+  },
+  {
+    "symbol": "LOGM",
+    "tier": 3
+  },
+  {
+    "symbol": "LPT",
+    "tier": 3
+  },
+  {
+    "symbol": "LPX",
+    "tier": 3
+  },
+  {
+    "symbol": "LSI",
+    "tier": 3
+  },
+  {
+    "symbol": "LSTR",
+    "tier": 3
+  },
+  {
+    "symbol": "MAC",
+    "tier": 3
+  },
+  {
+    "symbol": "MAN",
+    "tier": 3
+  },
+  {
+    "symbol": "MANH",
+    "tier": 3
+  },
+  {
+    "symbol": "MASI",
+    "tier": 3
+  },
+  {
+    "symbol": "MCY",
+    "tier": 3
+  },
+  {
+    "symbol": "MD",
+    "tier": 3
+  },
+  {
+    "symbol": "MDP",
+    "tier": 3
+  },
+  {
+    "symbol": "MDRX",
+    "tier": 3
+  },
+  {
+    "symbol": "MDU",
+    "tier": 3
+  },
+  {
+    "symbol": "MKSI",
+    "tier": 3
+  },
+  {
+    "symbol": "MLHR",
+    "tier": 3
+  },
+  {
+    "symbol": "MMS",
+    "tier": 3
+  },
+  {
+    "symbol": "MOH",
+    "tier": 3
+  },
+  {
+    "symbol": "MPW",
+    "tier": 3
+  },
+  {
+    "symbol": "MPWR",
+    "tier": 3
+  },
+  {
+    "symbol": "MSA",
+    "tier": 3
+  },
+  {
+    "symbol": "MSM",
+    "tier": 3
+  },
+  {
+    "symbol": "MTDR",
+    "tier": 3
+  },
+  {
+    "symbol": "MAT",
+    "tier": 3
+  },
+  {
+    "symbol": "MTX",
+    "tier": 3
+  },
+  {
+    "symbol": "MTZ",
+    "tier": 3
+  },
+  {
+    "symbol": "MUR",
+    "tier": 3
+  },
+  {
+    "symbol": "MUSA",
+    "tier": 3
+  },
+  {
+    "symbol": "NATI",
+    "tier": 3
+  },
+  {
+    "symbol": "NAVI",
+    "tier": 3
+  },
+  {
+    "symbol": "NCR",
+    "tier": 3
+  },
+  {
+    "symbol": "NDSN",
+    "tier": 3
+  },
+  {
+    "symbol": "NEU",
+    "tier": 3
+  },
+  {
+    "symbol": "NFG",
+    "tier": 3
+  },
+  {
+    "symbol": "NJR",
+    "tier": 3
+  },
+  {
+    "symbol": "NNN",
+    "tier": 3
+  },
+  {
+    "symbol": "NTCT",
+    "tier": 3
+  },
+  {
+    "symbol": "NUS",
+    "tier": 3
+  },
+  {
+    "symbol": "NUVA",
+    "tier": 3
+  },
+  {
+    "symbol": "NVT",
+    "tier": 3
+  },
+  {
+    "symbol": "NWE",
+    "tier": 3
+  },
+  {
+    "symbol": "NYCB",
+    "tier": 3
+  },
+  {
+    "symbol": "NYT",
+    "tier": 3
+  },
+  {
+    "symbol": "ODP",
+    "tier": 3
+  },
+  {
+    "symbol": "OFC",
+    "tier": 3
+  },
+  {
+    "symbol": "OGE",
+    "tier": 3
+  },
+  {
+    "symbol": "OGS",
+    "tier": 3
+  },
+  {
+    "symbol": "OHI",
+    "tier": 3
+  },
+  {
+    "symbol": "OLED",
+    "tier": 3
+  },
+  {
+    "symbol": "OLLI",
+    "tier": 3
+  },
+  {
+    "symbol": "OLN",
+    "tier": 3
+  },
+  {
+    "symbol": "OI",
+    "tier": 3
+  },
+  {
+    "symbol": "ORI",
+    "tier": 3
+  },
+  {
+    "symbol": "OSK",
+    "tier": 3
+  },
+  {
+    "symbol": "OC",
+    "tier": 3
+  },
+  {
+    "symbol": "OZK",
+    "tier": 3
+  },
+  {
+    "symbol": "PACW",
+    "tier": 3
+  },
+  {
+    "symbol": "PK",
+    "tier": 3
+  },
+  {
+    "symbol": "PBF",
+    "tier": 3
+  },
+  {
+    "symbol": "PB",
+    "tier": 3
+  },
+  {
+    "symbol": "PBH",
+    "tier": 3
+  },
+  {
+    "symbol": "PCH",
+    "tier": 3
+  },
+  {
+    "symbol": "PDCO",
+    "tier": 3
+  },
+  {
+    "symbol": "PEB",
+    "tier": 3
+  },
+  {
+    "symbol": "PENN",
+    "tier": 3
+  },
+  {
+    "symbol": "PEN",
+    "tier": 3
+  },
+  {
+    "symbol": "PPC",
+    "tier": 3
+  },
+  {
+    "symbol": "PII",
+    "tier": 3
+  },
+  {
+    "symbol": "PNFP",
+    "tier": 3
+  },
+  {
+    "symbol": "PNM",
+    "tier": 3
+  },
+  {
+    "symbol": "POL",
+    "tier": 3
+  },
+  {
+    "symbol": "POOL",
+    "tier": 3
+  },
+  {
+    "symbol": "POST",
+    "tier": 3
+  },
+  {
+    "symbol": "PRAH",
+    "tier": 3
+  },
+  {
+    "symbol": "PSB",
+    "tier": 3
+  },
+  {
+    "symbol": "PRI",
+    "tier": 3
+  },
+  {
+    "symbol": "PTC",
+    "tier": 3
+  },
+  {
+    "symbol": "PTEN",
+    "tier": 3
+  },
+  {
+    "symbol": "PZZA",
+    "tier": 3
+  },
+  {
+    "symbol": "R",
+    "tier": 3
+  },
+  {
+    "symbol": "RBC",
+    "tier": 3
+  },
+  {
+    "symbol": "RGA",
+    "tier": 3
+  },
+  {
+    "symbol": "RGEN",
+    "tier": 3
+  },
+  {
+    "symbol": "RGLD",
+    "tier": 3
+  },
+  {
+    "symbol": "RIG",
+    "tier": 3
+  },
+  {
+    "symbol": "RNR",
+    "tier": 3
+  },
+  {
+    "symbol": "ROL",
+    "tier": 3
+  },
+  {
+    "symbol": "RPM",
+    "tier": 3
+  },
+  {
+    "symbol": "RS",
+    "tier": 3
+  },
+  {
+    "symbol": "RYN",
+    "tier": 3
+  },
+  {
+    "symbol": "SABR",
+    "tier": 3
+  },
+  {
+    "symbol": "SAFM",
+    "tier": 3
+  },
+  {
+    "symbol": "SAIC",
+    "tier": 3
+  },
+  {
+    "symbol": "SAM",
+    "tier": 3
+  },
+  {
+    "symbol": "SBH",
+    "tier": 3
+  },
+  {
+    "symbol": "SBNY",
+    "tier": 3
+  },
+  {
+    "symbol": "SBRA",
+    "tier": 3
+  },
+  {
+    "symbol": "SIGI",
+    "tier": 3
+  },
+  {
+    "symbol": "SMTC",
+    "tier": 3
+  },
+  {
+    "symbol": "SCI",
+    "tier": 3
+  },
+  {
+    "symbol": "SEIC",
+    "tier": 3
+  },
+  {
+    "symbol": "SF",
+    "tier": 3
+  },
+  {
+    "symbol": "SFM",
+    "tier": 3
+  },
+  {
+    "symbol": "SGMS",
+    "tier": 3
+  },
+  {
+    "symbol": "SIX",
+    "tier": 3
+  },
+  {
+    "symbol": "SKT",
+    "tier": 3
+  },
+  {
+    "symbol": "SKX",
+    "tier": 3
+  },
+  {
+    "symbol": "SLAB",
+    "tier": 3
+  },
+  {
+    "symbol": "SLGN",
+    "tier": 3
+  },
+  {
+    "symbol": "SLM",
+    "tier": 3
+  },
+  {
+    "symbol": "SMG",
+    "tier": 3
+  },
+  {
+    "symbol": "SNH",
+    "tier": 3
+  },
+  {
+    "symbol": "SNV",
+    "tier": 3
+  },
+  {
+    "symbol": "SNX",
+    "tier": 3
+  },
+  {
+    "symbol": "SON",
+    "tier": 3
+  },
+  {
+    "symbol": "SRC",
+    "tier": 3
+  },
+  {
+    "symbol": "STL",
+    "tier": 3
+  },
+  {
+    "symbol": "SRCL",
+    "tier": 3
+  },
+  {
+    "symbol": "STLD",
+    "tier": 3
+  },
+  {
+    "symbol": "SWX",
+    "tier": 3
+  },
+  {
+    "symbol": "SXT",
+    "tier": 3
+  },
+  {
+    "symbol": "SYNA",
+    "tier": 3
+  },
+  {
+    "symbol": "SYNH",
+    "tier": 3
+  },
+  {
+    "symbol": "TTEK",
+    "tier": 3
+  },
+  {
+    "symbol": "TCBI",
+    "tier": 3
+  },
+  {
+    "symbol": "TCO",
+    "tier": 3
+  },
+  {
+    "symbol": "TDC",
+    "tier": 3
+  },
+  {
+    "symbol": "TDS",
+    "tier": 3
+  },
+  {
+    "symbol": "TDY",
+    "tier": 3
+  },
+  {
+    "symbol": "TECD",
+    "tier": 3
+  },
+  {
+    "symbol": "TECH",
+    "tier": 3
+  },
+  {
+    "symbol": "TER",
+    "tier": 3
+  },
+  {
+    "symbol": "TEX",
+    "tier": 3
+  },
+  {
+    "symbol": "TGNA",
+    "tier": 3
+  },
+  {
+    "symbol": "THC",
+    "tier": 3
+  },
+  {
+    "symbol": "THG",
+    "tier": 3
+  },
+  {
+    "symbol": "THO",
+    "tier": 3
+  },
+  {
+    "symbol": "THS",
+    "tier": 3
+  },
+  {
+    "symbol": "TKR",
+    "tier": 3
+  },
+  {
+    "symbol": "TOL",
+    "tier": 3
+  },
+  {
+    "symbol": "TPH",
+    "tier": 3
+  },
+  {
+    "symbol": "TPX",
+    "tier": 3
+  },
+  {
+    "symbol": "TR",
+    "tier": 3
+  },
+  {
+    "symbol": "TREE",
+    "tier": 3
+  },
+  {
+    "symbol": "TREX",
+    "tier": 3
+  },
+  {
+    "symbol": "TRMB",
+    "tier": 3
+  },
+  {
+    "symbol": "TRIP",
+    "tier": 3
+  },
+  {
+    "symbol": "TRMK",
+    "tier": 3
+  },
+  {
+    "symbol": "TRN",
+    "tier": 3
+  },
+  {
+    "symbol": "TTC",
+    "tier": 3
+  },
+  {
+    "symbol": "TXRH",
+    "tier": 3
+  },
+  {
+    "symbol": "TYL",
+    "tier": 3
+  },
+  {
+    "symbol": "UBSI",
+    "tier": 3
+  },
+  {
+    "symbol": "UE",
+    "tier": 3
+  },
+  {
+    "symbol": "UFS",
+    "tier": 3
+  },
+  {
+    "symbol": "UGI",
+    "tier": 3
+  },
+  {
+    "symbol": "UMBF",
+    "tier": 3
+  },
+  {
+    "symbol": "UMPQ",
+    "tier": 3
+  },
+  {
+    "symbol": "UNFI",
+    "tier": 3
+  },
+  {
+    "symbol": "UTHR",
+    "tier": 3
+  },
+  {
+    "symbol": "UNIT",
+    "tier": 3
+  },
+  {
+    "symbol": "URBN",
+    "tier": 3
+  },
+  {
+    "symbol": "VAC",
+    "tier": 3
+  },
+  {
+    "symbol": "VC",
+    "tier": 3
+  },
+  {
+    "symbol": "VLY",
+    "tier": 3
+  },
+  {
+    "symbol": "VMI",
+    "tier": 3
+  },
+  {
+    "symbol": "VVV",
+    "tier": 3
+  },
+  {
+    "symbol": "VSM",
+    "tier": 3
+  },
+  {
+    "symbol": "VSAT",
+    "tier": 3
+  },
+  {
+    "symbol": "VSH",
+    "tier": 3
+  },
+  {
+    "symbol": "WRB",
+    "tier": 3
+  },
+  {
+    "symbol": "WAFD",
+    "tier": 3
+  },
+  {
+    "symbol": "WBS",
+    "tier": 3
+  },
+  {
+    "symbol": "WEN",
+    "tier": 3
+  },
+  {
+    "symbol": "WERN",
+    "tier": 3
+  },
+  {
+    "symbol": "WEX",
+    "tier": 3
+  },
+  {
+    "symbol": "WOR",
+    "tier": 3
+  },
+  {
+    "symbol": "WPX",
+    "tier": 3
+  },
+  {
+    "symbol": "WRI",
+    "tier": 3
+  },
+  {
+    "symbol": "WSM",
+    "tier": 3
+  },
+  {
+    "symbol": "WSO",
+    "tier": 3
+  },
+  {
+    "symbol": "WST",
+    "tier": 3
+  },
+  {
+    "symbol": "WTFC",
+    "tier": 3
+  },
+  {
+    "symbol": "WTR",
+    "tier": 3
+  },
+  {
+    "symbol": "WW",
+    "tier": 3
+  },
+  {
+    "symbol": "WWD",
+    "tier": 3
+  },
+  {
+    "symbol": "WWE",
+    "tier": 3
+  },
+  {
+    "symbol": "WYND",
+    "tier": 3
+  },
+  {
+    "symbol": "X",
+    "tier": 3
+  },
+  {
+    "symbol": "Y",
+    "tier": 3
+  },
+  {
+    "symbol": "XPO",
+    "tier": 3
+  },
+  {
+    "symbol": "YELP",
+    "tier": 3
+  }
+]

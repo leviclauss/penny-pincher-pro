@@ -1,7 +1,8 @@
-"""Blue-chip universe management.
+"""Blue-chip + mid/small-cap universe management.
 
-Loads the S&P 100 symbol list from ``universe_list.json`` and upserts
-symbols into the ``tickers`` table with ``ticker_source='universe'``.
+Loads the bundled symbol lists (S&P 100 large-cap, S&P 400 mid-cap,
+S&P 600 small-cap) and upserts symbols into the ``tickers`` table with
+``ticker_source='universe'``.
 
 Watchlist-sourced tickers (``ticker_source='watchlist'``) are never
 downgraded — watchlist always takes precedence. New universe tickers
@@ -9,9 +10,27 @@ land with ``is_active=True`` so the nightly evening pipeline ingests their
 bars/indicators/options automatically, and ``is_hidden=True`` so they
 don't appear in the main watchlist UI.
 
+Tier mapping (drives the ``tier_allowed`` screener filter):
+
+- tier 1 / 2 — S&P 100 (existing curated split inherited from
+  ``universe_list.json``).
+- tier 3 — S&P 400 mid-caps (``universe_sp400.json``).
+- tier 4 — S&P 600 small-caps (``universe_sp600.json``).
+
+Sectors are not bundled — ``ingestion.ticker_metadata`` fetches them from
+Finnhub. Re-run that one-shot after a fresh sync so the new rows pick up
+sector + market_cap, both of which power the ``sector_allowed`` and
+``min_market_cap`` filters.
+
+The bundled lists are a point-in-time snapshot of index membership and
+will drift on index reconstitutions. Treat them as a starting universe,
+not a live feed — symbols that have since been delisted or renamed are
+caught lazily by the per-symbol ingestion pipeline (which logs and
+skips) rather than blocking the sync.
+
 Usage::
 
-    python -m ingestion.universe          # sync once and exit
+    python -m ingestion.universe          # sync all bundled lists once
     python -m ingestion.universe --list   # print the bundled symbol list
 """
 
@@ -32,7 +51,16 @@ from db.models.market import Ticker
 
 log = get_logger(__name__)
 
-UNIVERSE_LIST_PATH = Path(__file__).parent / "universe_list.json"
+_INGESTION_DIR = Path(__file__).parent
+UNIVERSE_LIST_PATH = _INGESTION_DIR / "universe_list.json"
+UNIVERSE_SP400_PATH = _INGESTION_DIR / "universe_sp400.json"
+UNIVERSE_SP600_PATH = _INGESTION_DIR / "universe_sp600.json"
+
+DEFAULT_UNIVERSE_PATHS: tuple[Path, ...] = (
+    UNIVERSE_LIST_PATH,
+    UNIVERSE_SP400_PATH,
+    UNIVERSE_SP600_PATH,
+)
 
 
 @dataclass(slots=True)
@@ -44,7 +72,7 @@ class UniverseSyncSummary:
 
 
 def load_universe_list(path: Path | None = None) -> list[dict[str, str | int | None]]:
-    """Load the bundled JSON list, optionally overriding the path for tests."""
+    """Load a single bundled JSON list, optionally overriding the path for tests."""
     p = path or UNIVERSE_LIST_PATH
     with open(p) as fh:
         data: object = json.load(fh)
@@ -53,12 +81,36 @@ def load_universe_list(path: Path | None = None) -> list[dict[str, str | int | N
     return data
 
 
+def load_all_universe_lists(
+    paths: tuple[Path, ...] | None = None,
+) -> list[dict[str, str | int | None]]:
+    """Load every bundled list and concatenate.
+
+    Later paths cannot overwrite earlier entries for the same symbol —
+    the first occurrence wins. With the default ordering this means S&P
+    100 tier assignments take precedence over the mid/small-cap files
+    if a symbol appears in both (e.g. promotions/relegations between
+    snapshots).
+    """
+    seen: dict[str, dict[str, str | int | None]] = {}
+    for path in paths or DEFAULT_UNIVERSE_PATHS:
+        if not path.exists():
+            log.warning("universe.list_missing", path=str(path))
+            continue
+        for entry in load_universe_list(path):
+            sym = str(entry["symbol"])
+            if sym in seen:
+                continue
+            seen[sym] = entry
+    return list(seen.values())
+
+
 def sync_universe_tickers(
     session: Session,
     *,
-    universe_path: Path | None = None,
+    universe_paths: tuple[Path, ...] | None = None,
 ) -> UniverseSyncSummary:
-    """Upsert S&P 100 symbols into ``tickers`` as ``ticker_source='universe'``.
+    """Upsert every bundled symbol into ``tickers`` as ``ticker_source='universe'``.
 
     Rules:
     - Already ``watchlist``: skip (watchlist takes precedence).
@@ -66,7 +118,7 @@ def sync_universe_tickers(
     - Not present: insert with ``is_active=True``, ``is_hidden=True``,
       ``ticker_source='universe'``.
     """
-    entries = load_universe_list(universe_path)
+    entries = load_all_universe_lists(universe_paths)
     symbols = [str(e["symbol"]) for e in entries]
 
     existing: dict[str, Ticker] = {
@@ -136,9 +188,10 @@ def get_universe_symbols(session: Session) -> list[str]:
 @click.option("--list", "list_only", is_flag=True, help="Print bundled symbols and exit.")
 def main(list_only: bool) -> None:
     if list_only:
-        entries = load_universe_list()
+        entries = load_all_universe_lists()
         for e in entries:
             click.echo(f"{e['symbol']:<8} tier={e.get('tier')}  {e.get('name', '')}")
+        click.echo(f"total: {len(entries)}")
         return
 
     with get_session() as session:
