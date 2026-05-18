@@ -43,7 +43,8 @@ A configurable filter pipeline that scores wheel candidates daily. Filters are c
 |---|---|---|
 | `no_earnings_in_window` | No earnings between today and target expiration | required |
 | `min_market_cap` | Market cap >= threshold | $5B |
-| `tier_allowed` | Ticker tier in allowed list | [1, 2] |
+| `tier_allowed` | Ticker tier in allowed list (1/2 = S&P 100, 3 = S&P 400 mid-cap, 4 = S&P 600 small-cap) | [1, 2] |
+| `sector_allowed` | GICS sector in allowed list — empty list = no restriction | [] |
 | `sector_concentration` | Don't fire alert if N candidates already passed in same sector today | max 3 |
 
 ### Tier 5 — Wheel-specific economics

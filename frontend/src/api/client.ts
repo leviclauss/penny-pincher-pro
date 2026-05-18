@@ -104,6 +104,10 @@ export function fetchTickers(includeHidden = false): Promise<TickerSummary[]> {
   return getJson<TickerSummary[]>(`/api/tickers${qs}`);
 }
 
+export function fetchSectors(): Promise<string[]> {
+  return getJson<string[]>("/api/tickers/sectors");
+}
+
 export function createTicker(input: TickerCreate): Promise<TickerSummary> {
   return mutateJson<TickerSummary>("POST", "/api/tickers", input).then(
     (r) => r as TickerSummary,

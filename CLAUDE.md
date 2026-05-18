@@ -107,6 +107,13 @@ Schema decisions worth knowing:
   flow (`python -m ingestion.ticker_metadata`), not the daily pipeline.
   Sector is sourced from Finnhub's `finnhubIndustry`; ETFs (SPY, QQQ)
   have no profile on the free tier and stay NULL.
+- `tickers.tier` is the universe-band marker: tier 1/2 = S&P 100
+  (`universe_list.json`), tier 3 = S&P 400 mid-cap
+  (`universe_sp400.json`), tier 4 = S&P 600 small-cap
+  (`universe_sp600.json`). The `tier_allowed` filter defaults to {1, 2}
+  so screener configs stay scoped to large-caps unless explicitly
+  opened up; the `sector_allowed` filter (empty list = no restriction)
+  narrows by GICS sector.
 - `macro_daily.spy_ema_200` is read from `indicators_daily` (single
   source of truth); the macro fetcher must run after the indicator step.
 - `macro_daily.vix_term_structure` = `vix_9d / vix_close`; values < 1
@@ -156,6 +163,8 @@ Non-obvious commands:
 |---|---|
 | Seed dev watchlist | `cd backend && python -m scripts.seed_dev` |
 | Refresh ticker metadata (sector, market_cap) | `cd backend && python -m ingestion.ticker_metadata` |
+| Sync the bundled universe lists (S&P 100 + 400 + 600) | `cd backend && python -m ingestion.universe` |
+| Then backfill sectors only for the new rows | `cd backend && python -m ingestion.ticker_metadata --only-missing` |
 | Backfill historical option chains (flat files, default) | `cd backend && python -m ingestion.options_history --start YYYY-MM-DD --end YYYY-MM-DD` |
 | Backfill historical option chains (REST fallback) | `cd backend && python -m ingestion.options_history --source rest --start YYYY-MM-DD --end YYYY-MM-DD` |
 | Backfill IV from options_historical | `cd backend && python -m ingestion.iv_backfill --start YYYY-MM-DD --end YYYY-MM-DD` |

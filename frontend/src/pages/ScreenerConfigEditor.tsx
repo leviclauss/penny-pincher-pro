@@ -16,6 +16,7 @@ import {
   createScreenerConfig,
   fetchFilterCatalog,
   fetchScreenerConfig,
+  fetchSectors,
   updateScreenerConfig,
 } from "@/api/client";
 import type {
@@ -80,7 +81,7 @@ const CATEGORY_TONES: Record<FilterCategory, string> = {
   event: "bg-violet-500/10 text-violet-300 ring-violet-500/30",
 };
 
-type ParamValue = number | number[];
+type ParamValue = number | number[] | string[];
 
 interface FormFilter {
   id: string;
@@ -571,18 +572,20 @@ interface ParamInputProps {
 
 function ParamInput({ spec, value, onChange }: ParamInputProps): JSX.Element {
   if (spec.kind === "tier_set") {
-    const selected = new Set(Array.isArray(value) ? value : []);
+    const selected = new Set<number>(
+      Array.isArray(value) ? value.filter((v): v is number => typeof v === "number") : [],
+    );
     const toggle = (tier: number): void => {
       const next = new Set(selected);
       if (next.has(tier)) next.delete(tier);
       else next.add(tier);
-      onChange(Array.from(next).sort());
+      onChange(Array.from(next).sort((a, b) => a - b));
     };
     return (
       <div className="space-y-1">
         <ParamLabel spec={spec} />
         <div className="flex gap-2">
-          {[1, 2, 3].map((t) => {
+          {[1, 2, 3, 4].map((t) => {
             const active = selected.has(t);
             return (
               <button
@@ -603,6 +606,10 @@ function ParamInput({ spec, value, onChange }: ParamInputProps): JSX.Element {
         </div>
       </div>
     );
+  }
+
+  if (spec.kind === "sector_set") {
+    return <SectorMultiSelect spec={spec} value={value} onChange={onChange} />;
   }
 
   const isPercent = spec.kind === "percent";
@@ -827,12 +834,91 @@ function ValidationList({ errors }: { errors: string[] }): JSX.Element | null {
   );
 }
 
+interface SectorMultiSelectProps {
+  spec: FilterParamSchema;
+  value: ParamValue;
+  onChange: (v: ParamValue) => void;
+}
+
+function SectorMultiSelect({
+  spec,
+  value,
+  onChange,
+}: SectorMultiSelectProps): JSX.Element {
+  const { data: sectors, isLoading } = useQuery({
+    queryKey: ["sectors"],
+    queryFn: fetchSectors,
+  });
+  const selected = new Set<string>(
+    Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [],
+  );
+  const toggle = (sector: string): void => {
+    const next = new Set(selected);
+    if (next.has(sector)) next.delete(sector);
+    else next.add(sector);
+    onChange(Array.from(next).sort());
+  };
+  const options = sectors ?? [];
+
+  return (
+    <div className="space-y-1">
+      <ParamLabel spec={spec} />
+      {isLoading && (
+        <p className="text-muted-foreground text-xs">Loading sectors…</p>
+      )}
+      {!isLoading && options.length === 0 && (
+        <p className="text-muted-foreground text-xs">
+          No sectors yet — run <code>ingestion.ticker_metadata</code> to populate.
+        </p>
+      )}
+      {options.length > 0 && (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {options.map((s) => {
+              const active = selected.has(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => toggle(s)}
+                  className={cn(
+                    "border-border rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
+                    active
+                      ? "border-primary bg-primary/15 text-primary-foreground"
+                      : "text-muted-foreground hover:bg-accent",
+                  )}
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-muted-foreground text-[10px]">
+            Empty = no restriction (every sector passes).
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---------- helpers ----------
 
 function blankFilterEntry(entry: FilterCatalogEntry): FormFilter {
   const params: Record<string, ParamValue> = {};
   for (const p of entry.params) {
-    params[p.name] = Array.isArray(p.default) ? [...p.default] : p.default;
+    const d = p.default;
+    if (Array.isArray(d)) {
+      if (d.every((x): x is string => typeof x === "string")) {
+        params[p.name] = [...d];
+      } else if (d.every((x): x is number => typeof x === "number")) {
+        params[p.name] = [...d];
+      } else {
+        params[p.name] = [];
+      }
+    } else {
+      params[p.name] = d;
+    }
   }
   return { id: entry.id, params, required: false };
 }
@@ -879,6 +965,8 @@ function formStateFromDetail(detail: ScreenerConfigDetail): FormState {
         if (typeof v === "number") params[k] = v;
         else if (Array.isArray(v) && v.every((x) => typeof x === "number")) {
           params[k] = v as number[];
+        } else if (Array.isArray(v) && v.every((x) => typeof x === "string")) {
+          params[k] = v as string[];
         }
       }
       return { id, params, required: Boolean(f.required) };
@@ -976,8 +1064,17 @@ function checkParam(
   if (spec.kind === "tier_set") {
     if (!Array.isArray(value)) return `${filterId}.${spec.name}: expected list of tiers.`;
     for (const t of value) {
-      if (![1, 2, 3].includes(t)) {
-        return `${filterId}.${spec.name}: tier ${t} not in [1, 2, 3].`;
+      if (typeof t !== "number" || ![1, 2, 3, 4].includes(t)) {
+        return `${filterId}.${spec.name}: tier ${t} not in [1, 2, 3, 4].`;
+      }
+    }
+    return null;
+  }
+  if (spec.kind === "sector_set") {
+    if (!Array.isArray(value)) return `${filterId}.${spec.name}: expected list of sectors.`;
+    for (const s of value) {
+      if (typeof s !== "string") {
+        return `${filterId}.${spec.name}: sector entries must be strings.`;
       }
     }
     return null;

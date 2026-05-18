@@ -26,6 +26,7 @@ CATEGORY: FilterCategory = "event"
 NO_EARNINGS_DEFAULT_DAYS = 45
 MIN_MARKET_CAP_DEFAULT_USD = 5_000_000_000.0
 TIER_ALLOWED_DEFAULT: tuple[int, ...] = (1, 2)
+SECTOR_ALLOWED_DEFAULT: tuple[str, ...] = ()
 
 
 class NoEarningsInWindow:
@@ -119,3 +120,40 @@ class TierAllowed:
             return ineligible("missing_tier")
         passed = tier in allowed
         return FilterResult(passed=passed, value=tier)
+
+
+class SectorAllowed:
+    """``ticker.sector`` is in the allowed set.
+
+    An empty allow-list disables the filter (everything passes), so this
+    can be wired up as a *required* filter without breaking configs that
+    haven't picked sectors yet. Sectors come from Finnhub's
+    ``finnhubIndustry`` via ``ingestion.ticker_metadata``; tickers
+    without a sector (ETFs, freshly added rows) come back as
+    ineligible rather than failing silently.
+    """
+
+    id: ClassVar[str] = "sector_allowed"
+    label: ClassVar[str] = "Allowed sectors"
+    description: ClassVar[str] = "ticker.sector is in the allowed set. Empty list = no restriction."
+    category: ClassVar[FilterCategory] = CATEGORY
+    scored: ClassVar[bool] = False
+    param_schema: ClassVar[tuple[ParamSpec, ...]] = (
+        ParamSpec(
+            name="sectors",
+            label="Allowed sectors",
+            kind="sector_set",
+            default=SECTOR_ALLOWED_DEFAULT,
+        ),
+    )
+
+    def evaluate(self, ctx: FilterContext, params: Mapping[str, Any]) -> FilterResult:
+        allowed_raw = params.get("sectors", SECTOR_ALLOWED_DEFAULT)
+        allowed = {str(s) for s in allowed_raw if str(s).strip()}
+        if not allowed:
+            return FilterResult(passed=True, value=None)
+        sector = ctx.ticker.sector
+        if sector is None:
+            return ineligible("missing_sector")
+        passed = sector in allowed
+        return FilterResult(passed=passed, value=sector)

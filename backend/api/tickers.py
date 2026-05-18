@@ -116,6 +116,23 @@ def _summary_from_row(
     )
 
 
+@router.get("/sectors", response_model=list[str])
+def list_sectors() -> list[str]:
+    """Distinct non-null sectors across every ticker (active + hidden).
+
+    Drives the sector filter chips on the Tickers page and the
+    ``sector_allowed`` filter's multi-select in the screener-config editor.
+    """
+    with get_session() as session:
+        rows = session.execute(
+            select(Ticker.sector)
+            .where(Ticker.sector.is_not(None))
+            .distinct()
+            .order_by(Ticker.sector)
+        ).all()
+        return [row[0] for row in rows if row[0]]
+
+
 @router.get("", response_model=list[TickerSummary])
 def list_tickers(
     include_hidden: bool = Query(default=False),

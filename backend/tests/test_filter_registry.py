@@ -32,6 +32,7 @@ EXPECTED_FILTER_IDS = {
     "no_earnings_in_window",
     "min_market_cap",
     "tier_allowed",
+    "sector_allowed",
     # Tier 5 — Wheel Economics
     "premium_economics",
 }
@@ -57,7 +58,7 @@ def test_resolve_unknown_raises() -> None:
 
 
 VALID_CATEGORIES = {"trend", "volatility", "liquidity", "event"}
-VALID_PARAM_KINDS = {"number", "integer", "percent", "currency", "tier_set"}
+VALID_PARAM_KINDS = {"number", "integer", "percent", "currency", "tier_set", "sector_set"}
 
 
 @pytest.mark.parametrize("filter_id", sorted(EXPECTED_FILTER_IDS))
