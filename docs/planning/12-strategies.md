@@ -36,22 +36,25 @@ High-IV pullbacks to long-term support on quality names. The default
 config and the one demonstrated in
 [`docs/planning/02-screener-filters.md`](02-screener-filters.md).
 
-**Required filters**
+**Required filters** (every named criterion is hard-gated — a config
+named "200EMA Touch" doesn't fire without an actual 200EMA touch)
 
 - `weekly_above_200ema` — regime gate; only buy puts on names in a
   weekly uptrend.
-- `no_earnings_in_window` (45 days) — earnings are uncorrelated risk
-  the screener can't price.
-
-**Optional filters**
-
 - `near_200ema` (within 3%) — buy support, not the rip.
 - `rsi_oversold` (≤ 40) — confirm the pullback is real.
 - `iv_percentile_high` (≥ 50) — only sell when premium is rich.
+- `no_earnings_in_window` (45 days) — earnings are uncorrelated risk
+  the screener can't price.
 - `min_market_cap` (≥ $10B) — liquidity floor.
 - `tier_allowed` ([1, 2]).
 - `not_freefall` (5d return ≥ -10%) — don't catch knives.
-- `sector_concentration` (max 3).
+
+**Optional filters** (scoring contributors only)
+
+- `iv_rank_high` (≥ 40) — bonus signal; contributes to the score but
+  doesn't gate.
+- `sector_concentration` (max 3) — post-processor.
 
 **Scoring weights:** `iv_percentile_high` 0.35, `near_200ema` 0.25,
 `rsi_oversold` 0.25, `iv_rank_high` 0.15.
@@ -67,17 +70,19 @@ EMA proximity than the conservative config; harder IV-rank floor.
 
 - `weekly_above_200ema`.
 - `iv_rank_high` (≥ 70) — the whole point.
+- `iv_above_hv` (≥ 1.05) — premium has to be priced rich relative to
+  realized vol.
+- `near_50ema` (within 5%) — entry has to be on a pullback, not the
+  blow-off top.
 - `no_earnings_in_window` (35 days).
-
-**Optional filters**
-
-- `iv_above_hv` (≥ 1.05).
-- `near_50ema` (within 5%).
-- `rsi_oversold` (≤ 55) — broader band; we're not waiting for deep pullbacks.
-- `iv_percentile_high` (≥ 60).
 - `min_market_cap` (≥ $5B).
 - `tier_allowed` ([1, 2]).
 - `not_freefall` (≥ -12%).
+
+**Optional filters** (scoring contributors only)
+
+- `rsi_oversold` (≤ 55) — broader band; we're not waiting for deep pullbacks.
+- `iv_percentile_high` (≥ 60).
 - `sector_concentration` (max 4).
 
 **Scoring weights:** `iv_rank_high` 0.40, `iv_percentile_high` 0.25,
@@ -95,16 +100,17 @@ gate — this strategy explicitly looks for snap-backs in weaker tape.
 
 - `bb_lower_touch`.
 - `rsi_oversold` (≤ 35).
+- `iv_percentile_high` (≥ 40) — premium floor; reversal trades only
+  pay if vol is rich.
 - `not_freefall` (≥ -15%).
 - `no_earnings_in_window` (30 days).
-
-**Optional filters**
-
-- `iv_percentile_high` (≥ 40).
-- `iv_rank_high` (≥ 40).
-- `iv_above_hv` (≥ 1.0).
 - `min_market_cap` (≥ $2B) — lowest cap floor of any default.
 - `tier_allowed` ([1, 2, 3]).
+
+**Optional filters** (scoring contributors only)
+
+- `iv_rank_high` (≥ 40).
+- `iv_above_hv` (≥ 1.0).
 - `sector_concentration` (max 3).
 
 **Scoring weights:** `rsi_oversold` 0.40, `iv_percentile_high` 0.30,
@@ -123,13 +129,15 @@ long earnings buffer. Lowest-variance default.
 - `tier_allowed` ([1] — tier 1 only).
 - `min_market_cap` (≥ $50B — highest floor).
 - `no_earnings_in_window` (45 days).
-
-**Optional filters**
-
-- `near_200ema` (within 5%).
-- `rsi_oversold` (≤ 50).
-- `iv_percentile_high` (≥ 40).
+- `iv_percentile_high` (≥ 40) — "income" means real premium, not a
+  flatlined name.
 - `not_freefall` (≥ -8%) — tightest knife-catching guard.
+
+**Optional filters** (scoring contributors only)
+
+- `near_200ema` (within 5%) — bonus signal when present, but income
+  strategies don't strictly require a touch.
+- `rsi_oversold` (≤ 50).
 - `sector_concentration` (max 2).
 
 **Scoring weights:** `iv_percentile_high` 0.40, `near_200ema` 0.30,
@@ -146,16 +154,16 @@ EMA with moderate IV and no earnings.
 
 - `weekly_above_200ema`.
 - `near_50ema` (within 2.5%) — the trigger.
+- `rsi_oversold` (≤ 55) — "pullback" is in the name; needs a real dip.
+- `iv_percentile_high` (≥ 35) — premium floor.
 - `no_earnings_in_window` (35 days).
-
-**Optional filters**
-
-- `rsi_oversold` (≤ 55).
-- `iv_percentile_high` (≥ 35).
-- `iv_rank_high` (≥ 35).
 - `min_market_cap` (≥ $10B).
 - `tier_allowed` ([1, 2]).
 - `not_freefall` (≥ -10%).
+
+**Optional filters** (scoring contributors only)
+
+- `iv_rank_high` (≥ 35).
 - `sector_concentration` (max 3).
 
 **Scoring weights:** `near_50ema` 0.40, `iv_percentile_high` 0.20,
@@ -172,15 +180,16 @@ CSPs that capitalize on vol mean-reversion.
 
 - `iv_rank_high` (≥ 75).
 - `iv_above_hv` (≥ 1.15).
+- `iv_percentile_high` (≥ 65) — three IV gates because the whole
+  thesis is vol mean-reversion.
 - `min_market_cap` (≥ $10B).
 - `no_earnings_in_window` (21 days — shortest window since this strategy targets short DTEs).
-
-**Optional filters**
-
-- `iv_percentile_high` (≥ 65).
-- `rsi_oversold` (≤ 50).
 - `tier_allowed` ([1, 2]).
 - `not_freefall` (≥ -15%).
+
+**Optional filters** (scoring contributors only)
+
+- `rsi_oversold` (≤ 50).
 - `sector_concentration` (max 3).
 
 **Scoring weights:** `iv_rank_high` 0.45, `iv_percentile_high` 0.30,
@@ -195,7 +204,9 @@ keyed by name. To add a new default:
 
 1. Define the config dict in `seed_filter_configs.py` and append it to
    `ALL_CONFIGS`. The seeder is idempotent and matches by name.
-2. Re-run `python -m scripts.seed_filter_configs`.
+2. Re-run `python -m scripts.seed_filter_configs`. To refresh an
+   already-seeded config after tweaking its defaults, run with
+   `--update-existing`.
 
 To create a one-off (non-default) config, `POST /api/configs` with the
 same JSON shape, or use the `/configs` page once it ships.
